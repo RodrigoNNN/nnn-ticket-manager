@@ -97,17 +97,9 @@ export default function MyTasks() {
 
     toast.success(newStatus === 'Done' ? 'Task completed!' : 'Task reopened');
 
-    // 2. Fire API in background — on failure, revert and re-fetch
+    // 2. Fire API in background — only re-fetch on failure to revert
     try {
       await apiToggleTask(taskId, user.id);
-      // Silent background refresh to sync server-computed values (ticket status, etc.)
-      Promise.all([
-        fetchMyTasks(user.id),
-        fetchWeeklyWorkload(user.id, weekDays[0], weekDays[4]),
-      ]).then(([data, wl]) => {
-        setTickets(data);
-        setWeekData(wl);
-      });
     } catch {
       toast.error('Failed to update task — reverting');
       refresh();
