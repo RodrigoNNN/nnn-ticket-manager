@@ -44,8 +44,14 @@ export default function WeekStrip({
       })()
     : '';
 
-  // Total week minutes
-  const totalWeekMins = Object.values(weekData).reduce((s, v) => s + v, 0);
+  // Unscheduled minutes (stored with special key)
+  const unscheduledMins = weekData._unscheduled || 0;
+
+  // Total week minutes (exclude _unscheduled key from day totals)
+  const scheduledWeekMins = Object.entries(weekData)
+    .filter(([k]) => k !== '_unscheduled')
+    .reduce((s, [, v]) => s + v, 0);
+  const totalWeekMins = scheduledWeekMins + unscheduledMins;
 
   return (
     <div className="card p-3">
@@ -57,6 +63,11 @@ export default function WeekStrip({
           {totalWeekMins > 0 && (
             <span className="text-[10px] font-medium text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded">
               {formatHours(totalWeekMins)} total
+            </span>
+          )}
+          {unscheduledMins > 0 && (
+            <span className="text-[10px] font-medium text-orange-500 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded">
+              {formatHours(unscheduledMins)} unscheduled
             </span>
           )}
         </div>

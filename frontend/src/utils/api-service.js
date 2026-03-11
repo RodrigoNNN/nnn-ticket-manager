@@ -84,21 +84,38 @@ export async function fetchEmployeeWorkload(userId, date) {
 
 /** Fetch workload for each day in a date range (Mon-Fri week view) */
 export async function fetchWeeklyWorkload(userId, startDate, endDate) {
-  const { data, error } = await supabase
-    .from('task_assignments')
-    .select('task_id, scheduled_date, tasks!inner(estimated_minutes, status)')
-    .eq('user_id', userId)
-    .neq('tasks.status', 'Done')
-    .gte('scheduled_date', startDate)
-    .lte('scheduled_date', endDate);
-  if (error) throw error;
+  // Fetch scheduled tasks in date range + unscheduled tasks in one query
+  const [scheduledRes, unscheduledRes] = await Promise.all([
+    supabase
+      .from('task_assignments')
+      .select('task_id, scheduled_date, tasks!inner(estimated_minutes, status)')
+      .eq('user_id', userId)
+      .neq('tasks.status', 'Done')
+      .gte('scheduled_date', startDate)
+      .lte('scheduled_date', endDate),
+    supabase
+      .from('task_assignments')
+      .select('task_id, tasks!inner(estimated_minutes, status)')
+      .eq('user_id', userId)
+      .neq('tasks.status', 'Done')
+      .is('scheduled_date', null),
+  ]);
+  if (scheduledRes.error) throw scheduledRes.error;
 
   const result = {};
-  for (const row of (data || [])) {
+  for (const row of (scheduledRes.data || [])) {
     const d = row.scheduled_date;
     if (!result[d]) result[d] = 0;
     result[d] += row.tasks?.estimated_minutes || 0;
   }
+
+  // Sum unscheduled task minutes
+  let unscheduled = 0;
+  for (const row of (unscheduledRes.data || [])) {
+    unscheduled += row.tasks?.estimated_minutes || 0;
+  }
+  if (unscheduled > 0) result._unscheduled = unscheduled;
+
   return result;
 }
 

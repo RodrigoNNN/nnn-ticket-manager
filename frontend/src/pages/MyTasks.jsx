@@ -66,9 +66,10 @@ export default function MyTasks() {
       departmentStatus: ticket.departmentStatus,
       tasks: ticket.tasks.filter(task => {
         if (!(task.assigned_to || []).includes(user.id)) return false;
-        // Day filter: if a day is selected, only show tasks scheduled for that day
-        if (selectedDate && task.scheduled_dates) {
-          return task.scheduled_dates[user.id] === selectedDate;
+        // Day filter: if a day is selected, show tasks for that day + unscheduled tasks
+        if (selectedDate) {
+          const userDate = task.scheduled_dates?.[user.id];
+          return userDate === selectedDate || !userDate;
         }
         return true;
       }),
@@ -87,14 +88,15 @@ export default function MyTasks() {
       ),
     })));
 
-    // Also optimistically update weekData (adjust minutes for the scheduled day)
+    // Also optimistically update weekData (adjust minutes for the scheduled day or unscheduled)
     const targetTask = tickets.flatMap(t => t.tasks).find(t => t.id === taskId);
-    if (targetTask?.estimated_minutes && targetTask.scheduled_dates?.[user.id]) {
-      const schedDay = targetTask.scheduled_dates[user.id];
+    if (targetTask?.estimated_minutes) {
+      const schedDay = targetTask.scheduled_dates?.[user.id];
+      const key = schedDay || '_unscheduled';
       const delta = newStatus === 'Done' ? -targetTask.estimated_minutes : targetTask.estimated_minutes;
       setWeekData(prev => ({
         ...prev,
-        [schedDay]: Math.max(0, (prev[schedDay] || 0) + delta),
+        [key]: Math.max(0, (prev[key] || 0) + delta),
       }));
     }
 
@@ -305,10 +307,15 @@ function TaskGroup({ group, currentUserId, allUsers, onToggle, onNavigate, onAdd
                     {task.estimated_minutes > 0 && (
                       <span className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded flex-shrink-0">{task.estimated_minutes}min</span>
                     )}
-                    {/* Show scheduled day label when viewing all */}
+                    {/* Show scheduled day label when viewing all, or unscheduled badge */}
                     {showDayLabel && task.scheduled_dates?.[currentUserId] && (
                       <span className="text-[9px] font-medium text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded flex-shrink-0">
                         {format(new Date(task.scheduled_dates[currentUserId] + 'T12:00:00'), 'EEE')}
+                      </span>
+                    )}
+                    {!task.scheduled_dates?.[currentUserId] && task.status !== 'Done' && (
+                      <span className="text-[9px] font-medium text-orange-500 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded flex-shrink-0">
+                        Unscheduled
                       </span>
                     )}
                   </div>
