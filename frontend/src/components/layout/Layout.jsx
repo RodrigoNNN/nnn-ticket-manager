@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import AiChatBubble from '../ai/AiChatBubble';
+import AiSettingsModal from '../ai/AiSettingsModal';
 import { Menu } from 'lucide-react';
 
 export default function Layout() {
@@ -21,6 +23,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <AiChatBubble />
+      <AiSettingsModal />
     </div>
   );
 }
