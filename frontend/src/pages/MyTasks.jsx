@@ -17,14 +17,9 @@ function getInitialWeekOffset() {
   return isWeekend(today) ? 1 : 0;
 }
 
-// Default selected day: on weekdays → today, on weekends → Monday of next week
+// Default to showing all tasks (no day filter) so user sees everything on load
 function getInitialSelectedDate() {
-  const today = new Date();
-  if (isWeekend(today)) {
-    const nextMon = startOfWeek(addDays(today, 7), { weekStartsOn: 1 });
-    return format(nextMon, 'yyyy-MM-dd');
-  }
-  return format(today, 'yyyy-MM-dd');
+  return null;
 }
 
 export default function MyTasks() {
