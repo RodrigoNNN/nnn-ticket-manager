@@ -1,9 +1,9 @@
 // Vercel Serverless Function — AI Chat Proxy
 // Normalizes OpenAI, Anthropic, and Google Gemini APIs into one SSE stream format
 
-export const config = { maxDuration: 60 };
+const config = { maxDuration: 60 };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -261,3 +261,6 @@ async function handleGemini(res, { apiKey, model, messages, stream }) {
   res.write('data: [DONE]\n\n');
   res.end();
 }
+
+module.exports = handler;
+module.exports.config = config;
