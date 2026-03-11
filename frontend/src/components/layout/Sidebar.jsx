@@ -32,7 +32,7 @@ export default function Sidebar({ open, onClose }) {
     { to: '/clients', icon: Building2, label: 'Clients' },
     { to: '/create', icon: PlusCircle, label: 'Create Ticket' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },
-    { to: '/settings', icon: Settings, label: 'Settings' },
+    ...(isAdmin ? [{ to: '/settings', icon: Settings, label: 'Settings' }] : []),
   ];
 
   const deptColor = {

@@ -27,6 +27,12 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function AdminRoute({ children }) {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Navigate to="/my-tasks" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <>
@@ -54,7 +60,7 @@ export default function App() {
           <Route path="/spas/:id" element={<ClientHistory />} />
           <Route path="/create" element={<CreateTicket />} />
           <Route path="/notifications" element={<Notifications />} />
-          <Route path="/settings" element={<AdminPanel />} />
+          <Route path="/settings" element={<AdminRoute><AdminPanel /></AdminRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/my-tasks" replace />} />
       </Routes>
