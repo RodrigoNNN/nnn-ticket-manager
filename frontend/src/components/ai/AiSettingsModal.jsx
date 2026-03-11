@@ -1,13 +1,46 @@
 import { useState, useEffect } from 'react';
 import { useAi } from '../../context/AiContext';
 import { testApiKey } from '../../utils/ai-service';
-import { X, Eye, EyeOff, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Eye, EyeOff, Loader2, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
 
 const PROVIDERS = [
   { id: 'openai', label: 'OpenAI', description: 'ChatGPT models', color: 'bg-green-500' },
   { id: 'anthropic', label: 'Anthropic', description: 'Claude models', color: 'bg-orange-500' },
   { id: 'gemini', label: 'Google Gemini', description: 'Gemini models', color: 'bg-blue-500' },
 ];
+
+const PROVIDER_INSTRUCTIONS = {
+  openai: {
+    url: 'https://platform.openai.com/api-keys',
+    steps: [
+      'Go to platform.openai.com and sign in (or create a free account)',
+      'Click your profile icon (top-right) → "API keys"',
+      'Click "+ Create new secret key", give it a name, and copy it',
+      'Paste the key below (starts with sk-...)',
+    ],
+    note: 'OpenAI offers $5 free credits for new accounts. After that, usage is pay-as-you-go (GPT-4o Mini costs ~$0.15 per 1M input tokens).',
+  },
+  anthropic: {
+    url: 'https://console.anthropic.com/settings/keys',
+    steps: [
+      'Go to console.anthropic.com and sign in (or create a free account)',
+      'Navigate to Settings → API Keys',
+      'Click "Create Key", give it a name, and copy it',
+      'Paste the key below (starts with sk-ant-...)',
+    ],
+    note: 'Anthropic offers $5 free credits for new accounts. Claude Haiku is the most affordable option (~$0.25 per 1M input tokens).',
+  },
+  gemini: {
+    url: 'https://aistudio.google.com/apikey',
+    steps: [
+      'Go to aistudio.google.com and sign in with your Google account',
+      'Click "Get API Key" in the left sidebar',
+      'Click "Create API key", select a project, and copy it',
+      'Paste the key below (starts with AI...)',
+    ],
+    note: 'Google Gemini has a generous free tier — up to 15 requests per minute at no cost. Great for getting started!',
+  },
+};
 
 const MODELS = {
   openai: [
@@ -98,6 +131,34 @@ export default function AiSettingsModal() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Setup Instructions */}
+        <div className="mb-4 bg-gray-50 dark:bg-gray-700/40 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+              How to get your {PROVIDERS.find(p => p.id === provider)?.label} API key:
+            </p>
+            <a
+              href={PROVIDER_INSTRUCTIONS[provider].url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 flex-shrink-0"
+            >
+              Open <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <ol className="space-y-1">
+            {PROVIDER_INSTRUCTIONS[provider].steps.map((step, i) => (
+              <li key={i} className="text-[11px] text-gray-600 dark:text-gray-400 flex gap-1.5">
+                <span className="text-blue-500 font-bold flex-shrink-0">{i + 1}.</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 italic">
+            {PROVIDER_INSTRUCTIONS[provider].note}
+          </p>
         </div>
 
         {/* Model Selection */}
