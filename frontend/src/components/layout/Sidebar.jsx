@@ -70,24 +70,36 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
 
-        {/* User Info — Clickable to switch user */}
+        {/* User Info — Clickable to switch user (admin only) */}
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 relative" ref={pickerRef}>
-          <button
-            onClick={() => setShowUserPicker(v => !v)}
-            className="flex items-center gap-3 w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-2 px-2 py-1 rounded-lg transition-colors"
-          >
-            <div className={`w-9 h-9 rounded-full ${deptColor[user?.department] || 'bg-gray-400'} flex items-center justify-center text-white font-semibold text-sm flex-shrink-0`}>
-              {user?.name?.charAt(0)?.toUpperCase()}
+          {isAdmin ? (
+            <button
+              onClick={() => setShowUserPicker(v => !v)}
+              className="flex items-center gap-3 w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-2 px-2 py-1 rounded-lg transition-colors"
+            >
+              <div className={`w-9 h-9 rounded-full ${deptColor[user?.department] || 'bg-gray-400'} flex items-center justify-center text-white font-semibold text-sm flex-shrink-0`}>
+                {user?.name?.charAt(0)?.toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{user?.department}</p>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserPicker ? 'rotate-180' : ''}`} />
+            </button>
+          ) : (
+            <div className="flex items-center gap-3 -mx-2 px-2 py-1">
+              <div className={`w-9 h-9 rounded-full ${deptColor[user?.department] || 'bg-gray-400'} flex items-center justify-center text-white font-semibold text-sm flex-shrink-0`}>
+                {user?.name?.charAt(0)?.toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{user?.department}</p>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{user?.department}</p>
-            </div>
-            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserPicker ? 'rotate-180' : ''}`} />
-          </button>
+          )}
 
-          {/* User Picker Dropdown */}
-          {showUserPicker && (
+          {/* User Picker Dropdown (admin only) */}
+          {isAdmin && showUserPicker && (
             <div className="absolute left-2 right-2 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
               <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
                 <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Switch User (Demo)</p>
