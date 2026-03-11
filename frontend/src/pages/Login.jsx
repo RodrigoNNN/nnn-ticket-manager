@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogIn, Loader2, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Loader2, Eye, EyeOff, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import { supabase } from '../utils/supabase';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -9,6 +10,11 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -27,28 +33,105 @@ export default function Login() {
     }
   };
 
-  // Quick login buttons for testing
-  const quickLogins = [
-    { name: 'Admin', email: 'admin@nnn.com', dept: 'Management' },
-    { name: 'Rodrigo', email: 'rodrigo@noneedleneeded.com', dept: 'Marketing' },
-    { name: 'Jizza', email: 'jizza@noneedleneeded.com', dept: 'Management' },
-    { name: 'Hossam', email: 'hossam@noneedleneeded.com', dept: 'IT' },
-  ];
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setResetError('');
+    setResetLoading(true);
 
-  const handleQuickLogin = async (qEmail) => {
-    setEmail(qEmail);
-    setPassword('password123');
-    setError('');
-    setIsLoading(true);
     try {
-      await login(qEmail, 'password123');
-      navigate('/my-tasks');
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) throw error;
+      setResetSent(true);
     } catch (err) {
-      setError(err.message || 'Login failed');
+      setResetError(err.message || 'Failed to send reset email');
     } finally {
-      setIsLoading(false);
+      setResetLoading(false);
     }
   };
+
+  // Forgot Password view
+  if (showForgotPassword) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          {/* Logo / Title */}
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg">
+              <span className="text-2xl font-extrabold text-white tracking-tight">N</span>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Reset Password</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">
+              {resetSent ? 'Check your inbox' : 'Enter your email to receive a reset link'}
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+            {resetSent ? (
+              <div className="text-center py-4">
+                <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                <p className="text-sm text-gray-700 dark:text-gray-300 mb-1">
+                  Password reset email sent to
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white mb-4">{resetEmail}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">
+                  Check your email and follow the link to reset your password. If you don't see it, check your spam folder.
+                </p>
+                <button
+                  onClick={() => { setShowForgotPassword(false); setResetSent(false); setResetEmail(''); }}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium inline-flex items-center gap-1"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Sign In
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                {resetError && (
+                  <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm rounded-lg p-3">
+                    {resetError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    required
+                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                >
+                  {resetLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  {resetLoading ? 'Sending...' : 'Send Reset Link'}
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowForgotPassword(false); setResetError(''); }}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium inline-flex items-center gap-1"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to Sign In
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
@@ -77,14 +160,23 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@nnn.com"
+                placeholder="your@email.com"
                 required
                 className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                >
+                  Forgot password?
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -113,25 +205,6 @@ export default function Login() {
               {isLoading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          {/* Quick Login (for testing) */}
-          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-3">Quick login for testing</p>
-            <div className="grid grid-cols-2 gap-2">
-              {quickLogins.map(q => (
-                <button
-                  key={q.email}
-                  onClick={() => handleQuickLogin(q.email)}
-                  disabled={isLoading}
-                  className="px-3 py-2 text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-700 dark:text-gray-300 transition-colors text-left"
-                >
-                  <span className="font-medium block">{q.name}</span>
-                  <span className="text-gray-500 dark:text-gray-400">{q.dept}</span>
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-2">Password: password123</p>
-          </div>
         </div>
       </div>
     </div>
