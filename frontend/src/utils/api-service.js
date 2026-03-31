@@ -7,6 +7,21 @@ import { supabase } from './supabase';
 const EFFECTIVE_MINUTES_PER_DAY = 420;
 const DEPARTMENTS = ['Management', 'Marketing', 'IT', 'Accounting'];
 
+/** Batched .in() — chunks large ID arrays to avoid Supabase URL length limits */
+async function batchIn(table, column, ids, selectStr = '*', extraFn) {
+  if (ids.length === 0) return [];
+  const CHUNK = 80;
+  const promises = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    let q = supabase.from(table).select(selectStr).in(column, chunk);
+    if (extraFn) q = extraFn(q);
+    promises.push(q);
+  }
+  const results = await Promise.all(promises);
+  return results.flatMap(r => r.data || []);
+}
+
 // ─── Auth ───
 
 export async function loginUser(email, password) {
@@ -461,40 +476,29 @@ async function buildFullTicketsBatch(tickets) {
 
   const ticketIds = tickets.map(t => t.id);
 
-  // 1. Batch fetch tasks, comments, activity in parallel
-  const [tasksRes, commentsRes, activityRes] = await Promise.all([
-    supabase.from('tasks').select('*').in('ticket_id', ticketIds).order('id'),
-    supabase.from('comments').select('*, users!inner(name, department)').in('ticket_id', ticketIds).order('created_at'),
-    supabase.from('activity_log').select('*, users(name)').in('ticket_id', ticketIds).order('created_at'),
+  // 1. Batch fetch tasks, comments, activity in parallel (chunked for large sets)
+  const [allTasks, allComments, allActivity] = await Promise.all([
+    batchIn('tasks', 'ticket_id', ticketIds, '*', q => q.order('id')),
+    batchIn('comments', 'ticket_id', ticketIds, '*, users!inner(name, department)', q => q.order('created_at')),
+    batchIn('activity_log', 'ticket_id', ticketIds, '*, users(name)', q => q.order('created_at')),
   ]);
 
-  const allTasks = tasksRes.data || [];
-  const allComments = commentsRes.data || [];
-  const allActivity = activityRes.data || [];
-
-  // 2. Fetch all task assignments in one query
+  // 2. Fetch all task assignments (chunked)
   const allTaskIds = allTasks.map(t => t.id);
-  let allAssignments = [];
-  if (allTaskIds.length > 0) {
-    const { data } = await supabase
-      .from('task_assignments')
-      .select('*, users!inner(name, department), scheduled_date')
-      .in('task_id', allTaskIds);
-    allAssignments = data || [];
-  }
+  const allAssignments = await batchIn('task_assignments', 'task_id', allTaskIds, '*, users!inner(name, department), scheduled_date');
 
   // 3. Fetch all unique spas in batch
   const uniqueSpaIds = [...new Set(tickets.map(t => t.spa_id).filter(Boolean))];
   const spasMap = {};
   if (uniqueSpaIds.length > 0) {
-    const [spasRes, promosRes, teamRes] = await Promise.all([
-      supabase.from('spas').select('*').in('id', uniqueSpaIds),
-      supabase.from('spa_promos').select('*').in('spa_id', uniqueSpaIds),
-      supabase.from('spa_team_members').select('*').in('spa_id', uniqueSpaIds),
+    const [spasData, promosData, teamData] = await Promise.all([
+      batchIn('spas', 'id', uniqueSpaIds),
+      batchIn('spa_promos', 'spa_id', uniqueSpaIds),
+      batchIn('spa_team_members', 'spa_id', uniqueSpaIds),
     ]);
-    for (const spa of (spasRes.data || [])) {
-      const promos = (promosRes.data || []).filter(p => p.spa_id === spa.id);
-      const teamRows = (teamRes.data || []).filter(t => t.spa_id === spa.id);
+    for (const spa of spasData) {
+      const promos = promosData.filter(p => p.spa_id === spa.id);
+      const teamRows = teamData.filter(t => t.spa_id === spa.id);
       const assigned_team = { Management: [], Marketing: [], IT: [], Accounting: [] };
       for (const row of teamRows) {
         if (assigned_team[row.department]) assigned_team[row.department].push(row.user_id);
@@ -552,7 +556,7 @@ async function buildFullTicket(ticket) {
 }
 
 export async function fetchTickets() {
-  const { data, error } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('tickets').select('*').order('created_at', { ascending: false }).limit(200);
   if (error) throw error;
   return buildFullTicketsBatch(data || []);
 }
@@ -570,20 +574,20 @@ export async function fetchTicketsBySpa(spaId) {
 }
 
 export async function fetchMyTasks(userId) {
+  // 1. Get task assignments for non-Done tasks only
   const { data: assignments, error } = await supabase
     .from('task_assignments')
-    .select('task_id')
-    .eq('user_id', userId);
+    .select('task_id, tasks!inner(ticket_id, status)')
+    .eq('user_id', userId)
+    .neq('tasks.status', 'Done');
   if (error) throw error;
 
-  const taskIds = (assignments || []).map(a => a.task_id);
-  if (taskIds.length === 0) return [];
+  const ticketIds = [...new Set((assignments || []).map(a => a.tasks?.ticket_id).filter(Boolean))];
+  if (ticketIds.length === 0) return [];
 
-  const { data: tasks } = await supabase.from('tasks').select('ticket_id').in('id', taskIds);
-  const ticketIds = [...new Set((tasks || []).map(t => t.ticket_id))];
-
-  const { data: tickets } = await supabase.from('tickets').select('*').in('id', ticketIds).order('created_at', { ascending: false });
-  return buildFullTicketsBatch(tickets || []);
+  // 2. Fetch tickets (batched for large sets), skip Done tickets
+  const tickets = await batchIn('tickets', 'id', ticketIds, '*', q => q.neq('status', 'Done').order('created_at', { ascending: false }));
+  return buildFullTicketsBatch(tickets);
 }
 
 /** Spa-aware auto-assignment logic */
