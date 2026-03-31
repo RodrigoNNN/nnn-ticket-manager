@@ -14,10 +14,17 @@ export function AuthProvider({ children }) {
     const stored = localStorage.getItem('nnn_user');
     const storedAdmin = localStorage.getItem('nnn_admin_user');
     if (stored) {
-      try { setUser(JSON.parse(stored)); } catch {}
-    }
-    if (storedAdmin) {
-      try { setAdminUser(JSON.parse(storedAdmin)); } catch {}
+      try {
+        const parsed = JSON.parse(stored);
+        setUser(parsed);
+        // If no admin stored yet but current user is admin, set them as admin
+        if (storedAdmin) {
+          try { setAdminUser(JSON.parse(storedAdmin)); } catch {}
+        } else if (parsed.role === 'admin') {
+          setAdminUser(parsed);
+          localStorage.setItem('nnn_admin_user', JSON.stringify(parsed));
+        }
+      } catch {}
     }
     setLoading(false);
   }, []);
