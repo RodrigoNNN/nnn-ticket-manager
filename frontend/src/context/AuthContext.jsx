@@ -5,16 +5,19 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [adminUser, setAdminUser] = useState(null); // original admin who logged in
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Load user from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem('nnn_user');
+    const storedAdmin = localStorage.getItem('nnn_admin_user');
     if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {}
+      try { setUser(JSON.parse(stored)); } catch {}
+    }
+    if (storedAdmin) {
+      try { setAdminUser(JSON.parse(storedAdmin)); } catch {}
     }
     setLoading(false);
   }, []);
@@ -33,16 +36,24 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const userData = await loginUser(email, password);
     setUser(userData);
+    setAdminUser(userData.role === 'admin' ? userData : null);
     localStorage.setItem('nnn_user', JSON.stringify(userData));
+    if (userData.role === 'admin') {
+      localStorage.setItem('nnn_admin_user', JSON.stringify(userData));
+    } else {
+      localStorage.removeItem('nnn_admin_user');
+    }
     return userData;
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
+    setAdminUser(null);
     localStorage.removeItem('nnn_user');
+    localStorage.removeItem('nnn_admin_user');
   }, []);
 
-  // Switch user (for demo/testing — works like quick login)
+  // Switch to view another user's profile (admin only)
   const switchUser = useCallback((userId) => {
     const found = allUsers.find(u => u.id === userId);
     if (found) {
@@ -51,10 +62,23 @@ export function AuthProvider({ children }) {
     }
   }, [allUsers]);
 
-  const isAdmin = user?.role === 'admin';
+  // Return to original admin profile
+  const switchBackToAdmin = useCallback(() => {
+    if (adminUser) {
+      setUser(adminUser);
+      localStorage.setItem('nnn_user', JSON.stringify(adminUser));
+    }
+  }, [adminUser]);
+
+  const isAdmin = adminUser?.role === 'admin';
+  const isViewingAsOther = adminUser && user && adminUser.id !== user.id;
 
   return (
-    <AuthContext.Provider value={{ user, allUsers, login, logout, switchUser, loading, isAdmin, refreshUsers }}>
+    <AuthContext.Provider value={{
+      user, allUsers, adminUser, login, logout,
+      switchUser, switchBackToAdmin, loading,
+      isAdmin, isViewingAsOther, refreshUsers,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -6,11 +6,11 @@ import { DEPARTMENTS, DEPT_COLORS } from '../../utils/constants';
 import {
   LayoutDashboard, KanbanSquare, PlusCircle, Settings,
   Bell, LogOut, Sun, Moon, ClipboardList, X, Building2,
-  ChevronDown, Check,
+  ChevronDown, Check, ArrowLeftCircle,
 } from 'lucide-react';
 
 export default function Sidebar({ open, onClose }) {
-  const { user, logout, isAdmin, switchUser, allUsers } = useAuth();
+  const { user, logout, isAdmin, isViewingAsOther, switchUser, switchBackToAdmin, allUsers, adminUser } = useAuth();
   const { dark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [showUserPicker, setShowUserPicker] = useState(false);
@@ -70,6 +70,17 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
 
+        {/* Back to Admin banner — shown when viewing as another user */}
+        {isViewingAsOther && (
+          <button
+            onClick={switchBackToAdmin}
+            className="flex items-center gap-2 w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
+          >
+            <ArrowLeftCircle className="w-4 h-4 flex-shrink-0" />
+            <span>Back to {adminUser?.name}</span>
+          </button>
+        )}
+
         {/* User Info — Clickable to switch user (admin only) */}
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 relative" ref={pickerRef}>
           {isAdmin ? (
@@ -81,6 +92,7 @@ export default function Sidebar({ open, onClose }) {
                 {user?.name?.charAt(0)?.toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
+                {isViewingAsOther && <p className="text-[9px] text-blue-500 font-medium uppercase tracking-wide">Viewing as</p>}
                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{user?.department}</p>
               </div>
@@ -102,7 +114,7 @@ export default function Sidebar({ open, onClose }) {
           {isAdmin && showUserPicker && (
             <div className="absolute left-2 right-2 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
               <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Switch User (Demo)</p>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">View as team member</p>
               </div>
               {DEPARTMENTS.map(dept => {
                 const deptUsers = activeUsers.filter(u => u.department === dept);
