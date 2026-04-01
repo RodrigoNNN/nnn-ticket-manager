@@ -33,7 +33,7 @@ export default function Sidebar({ open, onClose, onChangePassword }) {
     { to: '/create', icon: PlusCircle, label: 'Create Ticket' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },
     ...(!isViewingAsOther ? [{ to: '/profile', icon: User, label: 'My Profile' }] : []),
-    ...(isAdmin ? [{ to: '/settings', icon: Settings, label: 'Settings' }] : []),
+    ...(isAdmin && !isViewingAsOther ? [{ to: '/settings', icon: Settings, label: 'Settings' }] : []),
   ];
 
   const deptColor = {

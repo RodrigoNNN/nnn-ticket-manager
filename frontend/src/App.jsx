@@ -29,8 +29,8 @@ function ProtectedRoute({ children }) {
 }
 
 function AdminRoute({ children }) {
-  const { isAdmin } = useAuth();
-  if (!isAdmin) return <Navigate to="/my-tasks" replace />;
+  const { isAdmin, isViewingAsOther } = useAuth();
+  if (!isAdmin || isViewingAsOther) return <Navigate to="/my-tasks" replace />;
   return children;
 }
 

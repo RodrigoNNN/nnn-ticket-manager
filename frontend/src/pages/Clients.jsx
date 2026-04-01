@@ -18,7 +18,8 @@ function getMonthLabel(date) {
 export default function Clients() {
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
-  const { user, allUsers, isAdmin } = useAuth();
+  const { user, allUsers, isAdmin, isViewingAsOther } = useAuth();
+  const showAdminFeatures = isAdmin && !isViewingAsOther;
   const [allSpas, setAllSpas] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -200,7 +201,7 @@ export default function Clients() {
                     </span>
                   )}
                 </div>
-                {isAdmin && (
+                {showAdminFeatures && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setLogModal({ spaId: spa.id, spaName: spa.name }); setLogDate(new Date().toISOString().slice(0, 10)); setLogCount(''); setLogNotes(''); }}
                     className="flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
