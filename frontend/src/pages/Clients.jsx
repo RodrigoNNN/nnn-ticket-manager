@@ -5,7 +5,7 @@ import { fetchSpas, fetchTickets, fetchAllSpasMonthlyArrivals, upsertSpaArrival 
 import { TIER_DEFINITIONS } from '../utils/constants';
 import SpaTeamBadges from '../components/spa/SpaTeamBadges';
 import SpaGoalStatus from '../components/spa/SpaGoalStatus';
-import { Building2, Search, MapPin, Ticket, Loader2, CalendarDays, ChevronLeft, ChevronRight, Plus, X, Save, Check } from 'lucide-react';
+import { Building2, Search, MapPin, Ticket, Loader2, CalendarDays, ChevronLeft, ChevronRight, Plus, X, Save, Check, Filter } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function getMonthStr(date) {
@@ -37,6 +37,12 @@ export default function Clients() {
   const [logCount, setLogCount] = useState('');
   const [logNotes, setLogNotes] = useState('');
   const [logSaving, setLogSaving] = useState(false);
+
+  // Filters
+  const [filterPod, setFilterPod] = useState(false);     // My Pod
+  const [filterCountry, setFilterCountry] = useState(''); // '' | 'USA' | 'Canada'
+  const [filterTier, setFilterTier] = useState('');       // '' | '1' | '2' | '3'
+  const [filterGoal, setFilterGoal] = useState('');       // '' | 'on-track' | 'at-risk' | 'behind' | 'no-data'
 
   const monthStr = getMonthStr(monthDate);
 
@@ -87,16 +93,41 @@ export default function Clients() {
     return <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>;
   }
 
+  // Helper: compute goal status for a spa
+  const getGoalStatus = (spa) => {
+    const arrivals = arrivalsBySpa[spa.id] || 0;
+    const target = spa.arrival_goal_target;
+    const min = spa.arrival_goal_min;
+    if (!target && !min) return 'no-data';
+    if (arrivals >= (target || min)) return 'on-track';
+    if (arrivals >= (min || target)) return 'at-risk';
+    return 'behind';
+  };
+
   const spas = allSpas
     .filter(s => {
+      // Text search
       const q = search.toLowerCase();
-      if (!q) return true;
-      if (s.name.toLowerCase().includes(q)) return true;
-      if ((s.location || '').toLowerCase().includes(q)) return true;
-      const teamNames = Object.values(s.assigned_team || {}).flat()
-        .map(uid => allUsers.find(u => u.id === uid)?.name?.toLowerCase() || '');
-      if (teamNames.some(n => n.includes(q))) return true;
-      return false;
+      if (q) {
+        const nameMatch = s.name.toLowerCase().includes(q);
+        const locMatch = (s.location || '').toLowerCase().includes(q);
+        const teamNames = Object.values(s.assigned_team || {}).flat()
+          .map(uid => allUsers.find(u => u.id === uid)?.name?.toLowerCase() || '');
+        const teamMatch = teamNames.some(n => n.includes(q));
+        if (!nameMatch && !locMatch && !teamMatch) return false;
+      }
+      // My Pod
+      if (filterPod) {
+        const allMembers = Object.values(s.assigned_team || {}).flat();
+        if (!allMembers.includes(user?.id)) return false;
+      }
+      // Country
+      if (filterCountry && s.country !== filterCountry) return false;
+      // Tier
+      if (filterTier && String(s.tier) !== filterTier) return false;
+      // Goal status
+      if (filterGoal && getGoalStatus(s) !== filterGoal) return false;
+      return true;
     })
     .map(spa => {
       const spaTickets = tickets.filter(t => t.spa_id === spa.id);
@@ -109,6 +140,8 @@ export default function Clients() {
         monthArrivals: arrivalsBySpa[spa.id] || 0,
       };
     });
+
+  const activeFilterCount = [filterPod, filterCountry, filterTier, filterGoal].filter(Boolean).length;
 
   return (
     <div>
@@ -142,6 +175,92 @@ export default function Clients() {
           placeholder="Search by name, location, or team member..."
         />
       </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+
+        {/* My Pod */}
+        <button
+          onClick={() => setFilterPod(v => !v)}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+            filterPod
+              ? 'bg-blue-600 text-white border-blue-600'
+              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+          }`}
+        >
+          My Pod
+        </button>
+
+        {/* Country */}
+        {['USA', 'Canada'].map(c => (
+          <button
+            key={c}
+            onClick={() => setFilterCountry(v => v === c ? '' : c)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              filterCountry === c
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+
+        <span className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+
+        {/* Tier */}
+        {[1, 2, 3].map(t => (
+          <button
+            key={t}
+            onClick={() => setFilterTier(v => v === String(t) ? '' : String(t))}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              filterTier === String(t)
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+            }`}
+          >
+            Tier {t}
+          </button>
+        ))}
+
+        <span className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+
+        {/* Goal Status */}
+        {[
+          { key: 'on-track', label: 'On Track', dot: 'bg-green-500' },
+          { key: 'at-risk', label: 'At Risk', dot: 'bg-amber-500' },
+          { key: 'behind', label: 'Behind', dot: 'bg-red-500' },
+        ].map(g => (
+          <button
+            key={g.key}
+            onClick={() => setFilterGoal(v => v === g.key ? '' : g.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+              filterGoal === g.key
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-300'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${filterGoal === g.key ? 'bg-white' : g.dot}`} />
+            {g.label}
+          </button>
+        ))}
+
+        {/* Clear all */}
+        {activeFilterCount > 0 && (
+          <button
+            onClick={() => { setFilterPod(false); setFilterCountry(''); setFilterTier(''); setFilterGoal(''); }}
+            className="px-2 py-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
+          >
+            <X className="w-3 h-3" /> Clear
+          </button>
+        )}
+      </div>
+
+      {/* Results count */}
+      {(activeFilterCount > 0 || search) && (
+        <p className="text-xs text-gray-400 mb-3">{spas.length} of {allSpas.length} spas</p>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {spas.map(spa => {
