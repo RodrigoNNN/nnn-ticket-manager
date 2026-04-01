@@ -84,7 +84,9 @@ export default function CreateTicket() {
   };
 
   const handleTypeChange = (e) => {
-    setForm(f => ({ ...f, ticket_type: e.target.value }));
+    const typeName = e.target.value;
+    const type = ticketTypes.find(t => t.name === typeName);
+    setForm(f => ({ ...f, ticket_type: typeName, ticket_type_id: type?.id || '' }));
     setCustomFieldValues({});
   };
 
@@ -112,7 +114,8 @@ export default function CreateTicket() {
       toast.success('Ticket created successfully!');
       setTimeout(() => navigate(`/tickets/${ticket.id}`), 300);
     } catch (err) {
-      toast.error('Failed to create ticket');
+      console.error('Create ticket error:', err);
+      toast.error(err.message || 'Failed to create ticket');
       setLoading(false);
     }
   };

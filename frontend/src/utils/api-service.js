@@ -624,7 +624,7 @@ async function buildFullTicket(ticket) {
 }
 
 export async function fetchTickets() {
-  const { data, error } = await supabase.from('tickets').select('*').order('created_at', { ascending: false }).limit(200);
+  const { data, error } = await supabase.from('tickets').select('*').order('created_at', { ascending: false }).limit(500);
   if (error) throw error;
   return buildFullTicketsBatch(data || []);
 }
@@ -725,27 +725,39 @@ export async function createTicket(data, creatorId) {
   });
   if (error) throw error;
 
-  // Create tasks + auto-assign
-  let taskIdx = 0;
-  for (const sub of (subtasks || [])) {
-    const taskId = `${id}-t${taskIdx}`;
-    await supabase.from('tasks').insert({
-      id: taskId, ticket_id: id, department: sub.department,
-      task_name: sub.name, estimated_minutes: sub.estimated_minutes, status: 'Not Started',
-    });
+  // Create tasks + auto-assign (wrapped in try/catch so ticket creation succeeds even if task setup fails)
+  try {
+    let taskIdx = 0;
+    for (const sub of (subtasks || [])) {
+      const taskId = `${id}-t${taskIdx}`;
+      await supabase.from('tasks').insert({
+        id: taskId, ticket_id: id, department: sub.department,
+        task_name: sub.name, estimated_minutes: sub.estimated_minutes, status: 'Not Started',
+      });
 
-    const assignee = await getSpaAwareAssignee(sub.department, data.spa_id);
-    if (assignee) {
-      const scheduledDate = await pickLeastLoadedDay(assignee.id, sub.estimated_minutes);
-      await supabase.from('task_assignments').insert({ task_id: taskId, user_id: assignee.id, role: 'primary', scheduled_date: scheduledDate });
+      try {
+        const assignee = await getSpaAwareAssignee(sub.department, data.spa_id);
+        if (assignee) {
+          const scheduledDate = await pickLeastLoadedDay(assignee.id, sub.estimated_minutes);
+          await supabase.from('task_assignments').insert({ task_id: taskId, user_id: assignee.id, role: 'primary', scheduled_date: scheduledDate });
+        }
+      } catch (assignErr) {
+        console.warn(`Auto-assign failed for task ${taskId}:`, assignErr);
+      }
+      taskIdx++;
     }
-    taskIdx++;
+  } catch (taskErr) {
+    console.warn('Task creation partially failed for ticket', id, taskErr);
   }
 
-  // Activity log
-  await supabase.from('activity_log').insert({
-    ticket_id: id, user_id: creatorId, action: `Created ${data.ticket_type} ticket`,
-  });
+  // Activity log (non-critical)
+  try {
+    await supabase.from('activity_log').insert({
+      ticket_id: id, user_id: creatorId, action: `Created ${data.ticket_type} ticket`,
+    });
+  } catch (logErr) {
+    console.warn('Activity log failed for ticket', id, logErr);
+  }
 
   return fetchTicketById(id);
 }
