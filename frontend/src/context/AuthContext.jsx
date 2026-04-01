@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [adminUser, setAdminUser] = useState(null); // original admin who logged in
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [needsPasswordChange, setNeedsPasswordChange] = useState(false); // only true after fresh login
 
   // Load user from localStorage on mount
   useEffect(() => {
@@ -17,6 +18,8 @@ export function AuthProvider({ children }) {
       try {
         const parsed = JSON.parse(stored);
         setUser(parsed);
+        // Restore forced password state from stored user (fresh page load = still needs change)
+        if (parsed.must_change_password === true) setNeedsPasswordChange(true);
         // If no admin stored yet but current user is admin, set them as admin
         if (storedAdmin) {
           try { setAdminUser(JSON.parse(storedAdmin)); } catch {}
@@ -44,6 +47,7 @@ export function AuthProvider({ children }) {
     const userData = await loginUser(email, password);
     setUser(userData);
     setAdminUser(userData.role === 'admin' ? userData : null);
+    setNeedsPasswordChange(userData.must_change_password === true);
     localStorage.setItem('nnn_user', JSON.stringify(userData));
     if (userData.role === 'admin') {
       localStorage.setItem('nnn_admin_user', JSON.stringify(userData));
@@ -82,6 +86,19 @@ export function AuthProvider({ children }) {
     setUser(prev => {
       const merged = { ...prev, ...updatedFields };
       localStorage.setItem('nnn_user', JSON.stringify(merged));
+      // If password was just changed, clear forced change flag
+      if (merged.must_change_password === false) {
+        setNeedsPasswordChange(false);
+        // Also update adminUser if this is the admin
+        setAdminUser(a => {
+          if (a && a.id === merged.id) {
+            const updated = { ...a, must_change_password: false };
+            localStorage.setItem('nnn_admin_user', JSON.stringify(updated));
+            return updated;
+          }
+          return a;
+        });
+      }
       return merged;
     });
   }, []);
@@ -94,6 +111,7 @@ export function AuthProvider({ children }) {
       user, allUsers, adminUser, login, logout,
       switchUser, switchBackToAdmin, loading,
       isAdmin, isViewingAsOther, refreshUsers, updateUser,
+      needsPasswordChange,
     }}>
       {children}
     </AuthContext.Provider>

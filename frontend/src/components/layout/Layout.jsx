@@ -9,9 +9,9 @@ import { Menu } from 'lucide-react';
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
-  const { user } = useAuth();
+  const { needsPasswordChange } = useAuth();
 
-  const forcedChange = user?.must_change_password === true;
+  const forcedChange = needsPasswordChange;
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
