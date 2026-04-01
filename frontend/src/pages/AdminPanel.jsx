@@ -386,7 +386,7 @@ function SpaManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const emptyTeam = { Management: [], Marketing: [], IT: [], Accounting: [] };
-  const [form, setForm] = useState({ name: '', location: '', country: 'USA', tier: null, monthly_budget: '', arrival_goal: '', assigned_team: emptyTeam });
+  const [form, setForm] = useState({ name: '', location: '', country: 'USA', tier: null, monthly_budget: '', arrival_goal_min: '', arrival_goal_target: '', assigned_team: emptyTeam });
 
   const refresh = useCallback(() => {
     fetchSpas().then(setSpas).catch(() => {}).finally(() => setLoading(false));
@@ -404,7 +404,8 @@ function SpaManagement() {
           country: form.country,
           tier: form.tier,
           monthly_budget: form.monthly_budget ? Number(form.monthly_budget) : null,
-          arrival_goal: form.arrival_goal ? Number(form.arrival_goal) : null,
+          arrival_goal_min: form.arrival_goal_min ? Number(form.arrival_goal_min) : null,
+          arrival_goal_target: form.arrival_goal_target ? Number(form.arrival_goal_target) : null,
         });
         // Persist team changes separately
         await updateSpaTeam(editing, form.assigned_team);
@@ -416,14 +417,15 @@ function SpaManagement() {
           country: form.country,
           tier: form.tier,
           monthly_budget: form.monthly_budget ? Number(form.monthly_budget) : null,
-          arrival_goal: form.arrival_goal ? Number(form.arrival_goal) : null,
+          arrival_goal_min: form.arrival_goal_min ? Number(form.arrival_goal_min) : null,
+          arrival_goal_target: form.arrival_goal_target ? Number(form.arrival_goal_target) : null,
           assigned_team: form.assigned_team,
         });
         toast.success('Spa created');
       }
       setShowForm(false);
       setEditing(null);
-      setForm({ name: '', location: '', country: 'USA', tier: null, monthly_budget: '', arrival_goal: '', assigned_team: emptyTeam });
+      setForm({ name: '', location: '', country: 'USA', tier: null, monthly_budget: '', arrival_goal_min: '', arrival_goal_target: '', assigned_team: emptyTeam });
       refresh();
     } catch (err) {
       toast.error(err.message || 'Failed to save spa');
@@ -437,7 +439,8 @@ function SpaManagement() {
       country: spa.country || 'USA',
       tier: spa.tier || null,
       monthly_budget: spa.monthly_budget ? String(spa.monthly_budget) : '',
-      arrival_goal: spa.arrival_goal ? String(spa.arrival_goal) : '',
+      arrival_goal_min: spa.arrival_goal_min ? String(spa.arrival_goal_min) : '',
+      arrival_goal_target: spa.arrival_goal_target ? String(spa.arrival_goal_target) : '',
       assigned_team: spa.assigned_team ? JSON.parse(JSON.stringify(spa.assigned_team)) : { Management: [], Marketing: [], IT: [], Accounting: [] },
     });
     setEditing(spa.id);
@@ -448,7 +451,7 @@ function SpaManagement() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500 dark:text-gray-400">{spas.length} spas</p>
-        <button onClick={() => { setEditing(null); setForm({ name: '', location: '', country: 'USA', tier: null, monthly_budget: '', arrival_goal: '', assigned_team: emptyTeam }); setShowForm(true); }} className="btn-primary flex items-center gap-2 text-sm py-1.5">
+        <button onClick={() => { setEditing(null); setForm({ name: '', location: '', country: 'USA', tier: null, monthly_budget: '', arrival_goal_min: '', arrival_goal_target: '', assigned_team: emptyTeam }); setShowForm(true); }} className="btn-primary flex items-center gap-2 text-sm py-1.5">
           <Plus className="w-4 h-4" /> Add Spa
         </button>
       </div>
@@ -498,14 +501,21 @@ function SpaManagement() {
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{TIER_DEFINITIONS[form.tier]?.subtitle}</p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monthly Budget ($)</label>
-                  <input type="number" value={form.monthly_budget} onChange={e => setForm(f => ({ ...f, monthly_budget: e.target.value }))} className="input-field" placeholder="0" min="0" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Arrival Goal</label>
-                  <input type="number" value={form.arrival_goal} onChange={e => setForm(f => ({ ...f, arrival_goal: e.target.value }))} className="input-field" placeholder="0" min="0" />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monthly Budget ($)</label>
+                <input type="number" value={form.monthly_budget} onChange={e => setForm(f => ({ ...f, monthly_budget: e.target.value }))} className="input-field" placeholder="0" min="0" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monthly Arrival Goals</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-gray-400 uppercase tracking-wide mb-1">Minimum</label>
+                    <input type="number" value={form.arrival_goal_min} onChange={e => setForm(f => ({ ...f, arrival_goal_min: e.target.value }))} className="input-field" placeholder="e.g. 30" min="0" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-400 uppercase tracking-wide mb-1">Target</label>
+                    <input type="number" value={form.arrival_goal_target} onChange={e => setForm(f => ({ ...f, arrival_goal_target: e.target.value }))} className="input-field" placeholder="e.g. 37" min="0" />
+                  </div>
                 </div>
               </div>
               <div>
@@ -542,7 +552,8 @@ function SpaManagement() {
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {spa.location || 'No location'} &middot; {spa.country}
                     {spa.monthly_budget ? ` · $${spa.monthly_budget.toLocaleString()}/mo` : ''}
-                    {teamCount > 0 ? ` · ${teamCount} team member${teamCount !== 1 ? 's' : ''}` : ''}
+                    {spa.arrival_goal_min || spa.arrival_goal_target ? ` · Goal: ${spa.arrival_goal_min || '?'}–${spa.arrival_goal_target || '?'}` : ''}
+                    {teamCount > 0 ? ` · ${teamCount} member${teamCount !== 1 ? 's' : ''}` : ''}
                   </p>
                 </div>
               </div>

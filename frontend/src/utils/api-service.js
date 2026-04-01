@@ -306,7 +306,7 @@ export async function createSpa(data) {
 
 export async function updateSpa(id, data) {
   const fields = {};
-  for (const key of ['name', 'location', 'country', 'status', 'tier', 'monthly_budget', 'arrival_goal', 'onboarding_data', 'extra_fields', 'onboarded_via']) {
+  for (const key of ['name', 'location', 'country', 'status', 'tier', 'monthly_budget', 'arrival_goal', 'arrival_goal_min', 'arrival_goal_target', 'onboarding_data', 'extra_fields', 'onboarded_via']) {
     if (data[key] !== undefined) fields[key] = data[key];
   }
   if (Object.keys(fields).length) {
@@ -357,6 +357,51 @@ export async function fetchSpaPromos(spaId) {
     .order('name');
   if (error) throw error;
   return data || [];
+}
+
+// ─── Spa Daily Arrivals ───
+
+export async function fetchSpaArrivals(spaId, startDate, endDate) {
+  let query = supabase
+    .from('spa_daily_arrivals')
+    .select('*')
+    .eq('spa_id', spaId)
+    .order('date', { ascending: true });
+  if (startDate) query = query.gte('date', startDate);
+  if (endDate) query = query.lte('date', endDate);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchAllSpasMonthlyArrivals(month) {
+  // month format: 'YYYY-MM' — fetches all arrivals for the month
+  const startDate = `${month}-01`;
+  const endDate = `${month}-31`; // safe — Supabase handles overflow
+  const { data, error } = await supabase
+    .from('spa_daily_arrivals')
+    .select('*')
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .order('date', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertSpaArrival(spaId, date, arrivals, notes = '', recordedBy = null) {
+  const id = `arr-${spaId}-${date}`;
+  const { data, error } = await supabase
+    .from('spa_daily_arrivals')
+    .upsert({
+      id,
+      spa_id: spaId,
+      date,
+      arrivals,
+      notes,
+      recorded_by: recordedBy,
+    }, { onConflict: 'spa_id,date' });
+  if (error) throw error;
+  return data;
 }
 
 // ─── Promo Snapshots (for revert logic) ───
