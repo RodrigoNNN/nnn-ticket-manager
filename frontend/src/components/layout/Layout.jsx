@@ -3,8 +3,9 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import ChangePasswordModal from '../common/ChangePasswordModal';
 import WelcomeWalkthrough from '../common/WelcomeWalkthrough';
-import AiChatBubble from '../ai/AiChatBubble';
-import AiSettingsModal from '../ai/AiSettingsModal';
+// AI Assistant — disabled for now
+// import AiChatBubble from '../ai/AiChatBubble';
+// import AiSettingsModal from '../ai/AiSettingsModal';
 import { useAuth } from '../../context/AuthContext';
 import { Menu } from 'lucide-react';
 
@@ -48,9 +49,9 @@ export default function Layout() {
       {/* Welcome walkthrough for first-time users (after password is set) */}
       {!forcedChange && <WelcomeWalkthrough />}
 
-      {/* AI Assistant */}
-      <AiChatBubble />
-      <AiSettingsModal />
+      {/* AI Assistant — disabled for now */}
+      {/* <AiChatBubble /> */}
+      {/* <AiSettingsModal /> */}
     </div>
   );
 }
