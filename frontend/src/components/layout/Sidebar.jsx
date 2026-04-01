@@ -82,9 +82,9 @@ export default function Sidebar({ open, onClose, onChangePassword }) {
           </button>
         )}
 
-        {/* User Info — Clickable to switch user (admin only) */}
+        {/* User Info — Clickable to switch user (admin only, not while impersonating) */}
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 relative" ref={pickerRef}>
-          {isAdmin ? (
+          {isAdmin && !isViewingAsOther ? (
             <button
               onClick={() => setShowUserPicker(v => !v)}
               className="flex items-center gap-3 w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-2 px-2 py-1 rounded-lg transition-colors"
@@ -111,8 +111,8 @@ export default function Sidebar({ open, onClose, onChangePassword }) {
             </div>
           )}
 
-          {/* User Picker Dropdown (admin only) */}
-          {isAdmin && showUserPicker && (
+          {/* User Picker Dropdown (admin only, not while impersonating) */}
+          {isAdmin && !isViewingAsOther && showUserPicker && (
             <div className="absolute left-2 right-2 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
               <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
                 <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">View as team member</p>
