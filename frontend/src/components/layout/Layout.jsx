@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import ChangePasswordModal from '../common/ChangePasswordModal';
+import WelcomeWalkthrough from '../common/WelcomeWalkthrough';
 import { useAuth } from '../../context/AuthContext';
 import { Menu } from 'lucide-react';
 
@@ -41,6 +42,9 @@ export default function Layout() {
       {showChangePw && !forcedChange && (
         <ChangePasswordModal open onClose={() => setShowChangePw(false)} />
       )}
+
+      {/* Welcome walkthrough for first-time users (after password is set) */}
+      {!forcedChange && <WelcomeWalkthrough />}
     </div>
   );
 }
