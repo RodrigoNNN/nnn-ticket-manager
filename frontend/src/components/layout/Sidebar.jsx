@@ -6,7 +6,7 @@ import { DEPARTMENTS, DEPT_COLORS } from '../../utils/constants';
 import {
   LayoutDashboard, KanbanSquare, PlusCircle, Settings,
   Bell, LogOut, Sun, Moon, ClipboardList, X, Building2,
-  ChevronDown, Check, ArrowLeftCircle, Lock,
+  ChevronDown, Check, ArrowLeftCircle, Lock, User,
 } from 'lucide-react';
 
 export default function Sidebar({ open, onClose, onChangePassword }) {
@@ -32,6 +32,7 @@ export default function Sidebar({ open, onClose, onChangePassword }) {
     { to: '/clients', icon: Building2, label: 'Clients' },
     { to: '/create', icon: PlusCircle, label: 'Create Ticket' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },
+    ...(!isViewingAsOther ? [{ to: '/profile', icon: User, label: 'My Profile' }] : []),
     ...(isAdmin ? [{ to: '/settings', icon: Settings, label: 'Settings' }] : []),
   ];
 
@@ -176,15 +177,6 @@ export default function Sidebar({ open, onClose, onChangePassword }) {
 
         {/* Footer */}
         <div className="px-3 py-4 border-t border-gray-200 dark:border-gray-700 space-y-1">
-          {!isViewingAsOther && (
-            <button
-              onClick={() => { onChangePassword?.(); onClose(); }}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 w-full transition-colors"
-            >
-              <Lock className="w-5 h-5" />
-              Change Password
-            </button>
-          )}
           <button
             onClick={toggleTheme}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 w-full transition-colors"
