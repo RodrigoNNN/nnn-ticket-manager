@@ -73,12 +73,35 @@ export async function createUser(userData) {
     p_id: id,
     p_name: userData.name,
     p_email: userData.email,
-    p_password: userData.password || 'password123',
+    p_password: userData.password || 'Welcome1!',
     p_department: userData.department,
     p_role: userData.role || 'member',
     p_whatsapp_number: userData.whatsapp_number || '',
   });
   if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function changePassword(userId, currentPassword, newPassword) {
+  const { data, error } = await supabase.rpc('change_password', {
+    p_user_id: userId,
+    p_current_password: currentPassword,
+    p_new_password: newPassword,
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function adminResetPassword(adminId, targetUserId, newPassword) {
+  const { data, error } = await supabase.rpc('admin_reset_password', {
+    p_admin_id: adminId,
+    p_target_user_id: targetUserId,
+    p_new_password: newPassword,
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
   return data;
 }
 

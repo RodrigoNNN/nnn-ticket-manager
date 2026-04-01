@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { fetchSpas, updateSpa as apiUpdateSpa, updateSpaTeam, createSpa as apiCreateSpa, fetchTickets, fetchTicketTypes, createTicketType as apiCreateTicketType, updateTicketType as apiUpdateTicketType, fetchEmployeesWorkload, updateUser as apiUpdateUser, createUser as apiCreateUser } from '../utils/api-service';
+import { fetchSpas, updateSpa as apiUpdateSpa, updateSpaTeam, createSpa as apiCreateSpa, fetchTickets, fetchTicketTypes, createTicketType as apiCreateTicketType, updateTicketType as apiUpdateTicketType, fetchEmployeesWorkload, updateUser as apiUpdateUser, createUser as apiCreateUser, adminResetPassword } from '../utils/api-service';
 import { DEPARTMENTS, DEPT_COLORS, FIELD_TYPES, TIER_DEFINITIONS, EFFECTIVE_MINUTES_PER_DAY } from '../utils/constants';
 import OnboardingFormBuilder from '../components/admin/OnboardingFormBuilder';
 import WorkloadBar from '../components/common/WorkloadBar';
 import SpaTeamEditor from '../components/spa/SpaTeamEditor';
-import { Users, Building2, Tag, BarChart3, FileText, Download, Plus, Pencil, Trash2, X, Save, GripVertical, ChevronDown, Clock, Loader2 } from 'lucide-react';
+import { Users, Building2, Tag, BarChart3, FileText, Download, Plus, Pencil, Trash2, X, Save, GripVertical, ChevronDown, Clock, Loader2, KeyRound, Eye, EyeOff, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const TABS = [
@@ -166,12 +166,16 @@ function Dashboard() {
 }
 
 function UserManagement() {
-  const { allUsers, refreshUsers } = useAuth();
+  const { user: currentUser, allUsers, refreshUsers } = useAuth();
   const [users, setUsers] = useState(allUsers);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', department: 'Management', whatsapp_number: '', role: 'member' });
+  const [form, setForm] = useState({ name: '', email: '', department: 'Management', whatsapp_number: '', role: 'member', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [resettingUser, setResettingUser] = useState(null);
+  const [resetPw, setResetPw] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
 
   // Sync local state when allUsers changes (e.g. after refresh)
   useEffect(() => { setUsers(allUsers); }, [allUsers]);
@@ -196,11 +200,12 @@ function UserManagement() {
           department: form.department,
           whatsapp_number: form.whatsapp_number,
           role: form.role,
+          password: form.password || undefined,
         });
         toast.success('User created');
       }
       setShowForm(false); setEditing(null);
-      setForm({ name: '', email: '', department: 'Management', whatsapp_number: '', role: 'member' });
+      setForm({ name: '', email: '', department: 'Management', whatsapp_number: '', role: 'member', password: '' });
       await refreshUsers();
     } catch (err) {
       toast.error(err.message || 'Failed to save user');
@@ -210,8 +215,29 @@ function UserManagement() {
   };
 
   const editUser = (u) => {
-    setForm({ name: u.name, email: u.email, department: u.department, whatsapp_number: u.whatsapp_number || '', role: u.role });
+    setForm({ name: u.name, email: u.email, department: u.department, whatsapp_number: u.whatsapp_number || '', role: u.role, password: '' });
     setEditing(u.id); setShowForm(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPw || resetPw.length < 6) return toast.error('Password must be at least 6 characters');
+    setResetSaving(true);
+    try {
+      await adminResetPassword(currentUser.id, resettingUser.id, resetPw);
+      toast.success(`Temporary password set for ${resettingUser.name}`);
+      setResettingUser(null); setResetPw('');
+    } catch (err) {
+      toast.error(err.message || 'Failed to reset password');
+    } finally {
+      setResetSaving(false);
+    }
+  };
+
+  const generateTempPw = () => {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let pw = '';
+    for (let i = 0; i < 8; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+    return pw;
   };
 
   const groupedUsers = {};
@@ -221,7 +247,7 @@ function UserManagement() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500 dark:text-gray-400">{users.length} team members</p>
-        <button onClick={() => { setEditing(null); setForm({ name: '', email: '', department: 'Management', whatsapp_number: '', role: 'member' }); setShowForm(true); }} className="btn-primary flex items-center gap-2 text-sm py-1.5">
+        <button onClick={() => { setEditing(null); setForm({ name: '', email: '', department: 'Management', whatsapp_number: '', role: 'member', password: '' }); setShowForm(true); }} className="btn-primary flex items-center gap-2 text-sm py-1.5">
           <Plus className="w-4 h-4" /> Add Member
         </button>
       </div>
@@ -243,6 +269,27 @@ function UserManagement() {
                 <option value="Accounting">Accounting</option>
               </select>
               <input value={form.whatsapp_number} onChange={e => setForm(f => ({ ...f, whatsapp_number: e.target.value }))} className="input-field" placeholder="WhatsApp Number" />
+              {!editing && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Temporary Password</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={form.password}
+                        onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                        className="input-field pr-9"
+                        placeholder="Default: Welcome1!"
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <button type="button" onClick={() => { const pw = generateTempPw(); setForm(f => ({ ...f, password: pw })); setShowPassword(true); }} className="btn-secondary text-xs px-2 whitespace-nowrap">Generate</button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">User will be required to change this on first login</p>
+                </div>
+              )}
               <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="input-field">
                 <option value="member">Member</option>
                 <option value="admin">Admin</option>
@@ -272,12 +319,63 @@ function UserManagement() {
                     <p className="text-xs text-gray-500 dark:text-gray-400">{u.email}</p>
                   </div>
                 </div>
-                <button onClick={() => editUser(u)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><Pencil className="w-4 h-4 text-gray-400" /></button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => { setResettingUser(u); setResetPw(''); }} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="Reset Password"><KeyRound className="w-4 h-4 text-gray-400" /></button>
+                  <button onClick={() => editUser(u)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="Edit"><Pencil className="w-4 h-4 text-gray-400" /></button>
+                </div>
               </div>
             ))}
           </div>
         </div>
       ))}
+
+      {/* Reset Password Modal */}
+      {resettingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="card p-6 w-full max-w-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Reset Password</h3>
+              <button onClick={() => setResettingUser(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Set a temporary password for <span className="font-medium text-gray-900 dark:text-white">{resettingUser.name}</span>. They will be required to change it on next login.
+            </p>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={resetPw}
+                    onChange={e => setResetPw(e.target.value)}
+                    className="input-field pr-9"
+                    placeholder="New temporary password"
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <button type="button" onClick={() => { setResetPw(generateTempPw()); setShowPassword(true); }} className="btn-secondary text-xs px-2">Generate</button>
+              </div>
+              {resetPw && showPassword && (
+                <button
+                  type="button"
+                  onClick={() => { navigator.clipboard.writeText(resetPw); toast.success('Copied to clipboard'); }}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                >
+                  <Copy className="w-3 h-3" /> Copy password
+                </button>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setResettingUser(null)} className="btn-secondary text-sm">Cancel</button>
+                <button onClick={handleResetPassword} disabled={resetSaving} className="btn-primary flex items-center gap-2 text-sm">
+                  {resetSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                  {resetSaving ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -77,6 +77,15 @@ export function AuthProvider({ children }) {
     }
   }, [adminUser]);
 
+  // Update user object in state + localStorage (e.g. after password change)
+  const updateUser = useCallback((updatedFields) => {
+    setUser(prev => {
+      const merged = { ...prev, ...updatedFields };
+      localStorage.setItem('nnn_user', JSON.stringify(merged));
+      return merged;
+    });
+  }, []);
+
   const isAdmin = adminUser?.role === 'admin';
   const isViewingAsOther = adminUser && user && adminUser.id !== user.id;
 
@@ -84,7 +93,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, allUsers, adminUser, login, logout,
       switchUser, switchBackToAdmin, loading,
-      isAdmin, isViewingAsOther, refreshUsers,
+      isAdmin, isViewingAsOther, refreshUsers, updateUser,
     }}>
       {children}
     </AuthContext.Provider>
