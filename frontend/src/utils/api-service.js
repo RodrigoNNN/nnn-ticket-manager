@@ -446,6 +446,29 @@ export async function saveBudgetAllocations(spaId, month, rows, userId) {
   return data || [];
 }
 
+export async function fetchBudgetNotes(spaId, month) {
+  const { data, error } = await supabase
+    .from('spa_budget_notes')
+    .select('instructions')
+    .eq('spa_id', spaId)
+    .eq('month', month)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.instructions || '';
+}
+
+export async function saveBudgetNotes(spaId, month, instructions, userId) {
+  const { error } = await supabase
+    .from('spa_budget_notes')
+    .upsert({
+      spa_id: spaId,
+      month,
+      instructions,
+      updated_by: userId,
+    }, { onConflict: 'spa_id,month' });
+  if (error) throw error;
+}
+
 // ─── Promo Snapshots (for revert logic) ───
 
 async function createPromoSnapshot(ticketId, promo) {

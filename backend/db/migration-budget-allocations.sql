@@ -39,3 +39,22 @@ CREATE POLICY "Allow all updates on budget allocations"
 CREATE POLICY "Allow all deletes on budget allocations"
   ON spa_budget_allocations FOR DELETE
   USING (true);
+
+-- Budget instructions/notes per spa per month (separate from allocation rows)
+CREATE TABLE IF NOT EXISTS spa_budget_notes (
+  spa_id TEXT NOT NULL REFERENCES spas(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,
+  instructions TEXT NOT NULL DEFAULT '',
+  updated_by TEXT REFERENCES users(id),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (spa_id, month)
+);
+
+ALTER TABLE spa_budget_notes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all reads on budget notes"
+  ON spa_budget_notes FOR SELECT USING (true);
+CREATE POLICY "Allow all inserts on budget notes"
+  ON spa_budget_notes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow all updates on budget notes"
+  ON spa_budget_notes FOR UPDATE USING (true);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchBudgetAllocations, saveBudgetAllocations } from '../../utils/api-service';
-import { Plus, Trash2, Save, Loader2, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { fetchBudgetAllocations, saveBudgetAllocations, fetchBudgetNotes, saveBudgetNotes } from '../../utils/api-service';
+import { Plus, Trash2, Save, Loader2, ChevronLeft, ChevronRight, AlertTriangle, FileText } from 'lucide-react';
 import { format, addMonths, subMonths } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -21,6 +21,7 @@ export default function BudgetBreakdown({ spa }) {
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [instructions, setInstructions] = useState('');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
@@ -30,12 +31,17 @@ export default function BudgetBreakdown({ spa }) {
   const loadAllocations = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchBudgetAllocations(spa.id, month);
+      const [data, notes] = await Promise.all([
+        fetchBudgetAllocations(spa.id, month),
+        fetchBudgetNotes(spa.id, month),
+      ]);
       setRows(data.map(r => ({ label: r.label, amount: r.amount })));
+      setInstructions(notes);
       setDirty(false);
     } catch (err) {
       console.error('Failed to load allocations:', err);
       setRows([]);
+      setInstructions('');
     } finally {
       setLoading(false);
     }
@@ -61,7 +67,10 @@ export default function BudgetBreakdown({ spa }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveBudgetAllocations(spa.id, month, rows, user.id);
+      await Promise.all([
+        saveBudgetAllocations(spa.id, month, rows, user.id),
+        saveBudgetNotes(spa.id, month, instructions, user.id),
+      ]);
       setDirty(false);
       toast.success('Budget breakdown saved');
     } catch (err) {
@@ -202,6 +211,29 @@ export default function BudgetBreakdown({ spa }) {
               <span className="font-bold">Total: {fmtUSD(totalAllocated)}</span>
             </div>
           )}
+
+          {/* Instructions */}
+          <div className="mb-3">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <FileText className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase">Instructions / Notes</span>
+            </div>
+            {canEdit ? (
+              <textarea
+                value={instructions}
+                onChange={(e) => { setInstructions(e.target.value); setDirty(true); }}
+                placeholder="Add budget instructions, notes, or allocation details..."
+                rows={3}
+                className="input-field text-sm resize-y min-h-[60px]"
+              />
+            ) : (
+              instructions ? (
+                <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-700/40 rounded-lg p-3">{instructions}</p>
+              ) : (
+                <p className="text-sm text-gray-400 dark:text-gray-500 italic">No instructions for this month.</p>
+              )
+            )}
+          </div>
 
           {/* Actions */}
           {canEdit && (
