@@ -5,6 +5,12 @@ import { Plus, Trash2, Save, Loader2, ChevronLeft, ChevronRight, AlertTriangle, 
 import { format, addMonths, subMonths } from 'date-fns';
 import toast from 'react-hot-toast';
 
+// Parse 'yyyy-MM' to local date (avoids UTC timezone rollback)
+function monthToDate(month) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}
+
 // Parse a string like "1,500.00" or "$1500" into a number
 function parseCurrency(val) {
   if (typeof val === 'number') return val;
@@ -88,10 +94,10 @@ export default function BudgetBreakdown({ spa, month: monthProp, onMonthChange }
   };
 
   const prevMonth = () => {
-    setMonth(format(subMonths(new Date(month + '-01'), 1), 'yyyy-MM'));
+    setMonth(format(subMonths(monthToDate(month), 1), 'yyyy-MM'));
   };
   const nextMonth = () => {
-    setMonth(format(addMonths(new Date(month + '-01'), 1), 'yyyy-MM'));
+    setMonth(format(addMonths(monthToDate(month), 1), 'yyyy-MM'));
   };
 
   const totalAllocated = rows.reduce((sum, r) => sum + parseCurrency(r.amount), 0);
@@ -110,7 +116,7 @@ export default function BudgetBreakdown({ spa, month: monthProp, onMonthChange }
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px] text-center">
-            {format(new Date(month + '-01'), 'MMM yyyy')}
+            {format(monthToDate(month), 'MMM yyyy')}
           </span>
           <button onClick={nextMonth} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <ChevronRight className="w-4 h-4" />

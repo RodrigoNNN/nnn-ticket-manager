@@ -5,6 +5,12 @@ import { Loader2, Save, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Min
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
+// Parse 'yyyy-MM' to local date (avoids UTC timezone rollback)
+function monthToDate(month) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}
+
 function parseCurrency(val) {
   if (typeof val === 'number') return val;
   return parseFloat(String(val).replace(/[^0-9.\-]/g, '')) || 0;
@@ -130,13 +136,13 @@ export default function BudgetPacing({ spa, month, onMonthChange }) {
         </h3>
         {onMonthChange && (
           <div className="flex items-center gap-2">
-            <button onClick={() => onMonthChange(format(subMonths(new Date(month + '-01'), 1), 'yyyy-MM'))} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <button onClick={() => onMonthChange(format(subMonths(monthToDate(month), 1), 'yyyy-MM'))} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px] text-center">
-              {format(new Date(month + '-01'), 'MMM yyyy')}
+              {format(monthToDate(month), 'MMM yyyy')}
             </span>
-            <button onClick={() => onMonthChange(format(addMonths(new Date(month + '-01'), 1), 'yyyy-MM'))} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <button onClick={() => onMonthChange(format(addMonths(monthToDate(month), 1), 'yyyy-MM'))} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>

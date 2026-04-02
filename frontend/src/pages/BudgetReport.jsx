@@ -5,6 +5,12 @@ import { ChevronLeft, ChevronRight, ExternalLink, Save, Loader2, CheckCircle, Tr
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
+// Parse 'yyyy-MM' to local date (avoids UTC timezone rollback)
+function monthToDate(month) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}
+
 function parseCurrency(val) {
   if (typeof val === 'number') return val;
   return parseFloat(String(val).replace(/[^0-9.\-]/g, '')) || 0;
@@ -189,8 +195,8 @@ export default function BudgetReport() {
     return current !== savedStr;
   };
 
-  const prevMonth = () => setMonth(format(subMonths(new Date(month + '-01'), 1), 'yyyy-MM'));
-  const nextMonth = () => setMonth(format(addMonths(new Date(month + '-01'), 1), 'yyyy-MM'));
+  const prevMonth = () => setMonth(format(subMonths(monthToDate(month), 1), 'yyyy-MM'));
+  const nextMonth = () => setMonth(format(addMonths(monthToDate(month), 1), 'yyyy-MM'));
 
   return (
     <div>
@@ -202,7 +208,7 @@ export default function BudgetReport() {
             <ChevronLeft className="w-5 h-5" />
           </button>
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 min-w-[110px] text-center">
-            {format(new Date(month + '-01'), 'MMMM yyyy')}
+            {format(monthToDate(month), 'MMMM yyyy')}
           </span>
           <button onClick={nextMonth} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
             <ChevronRight className="w-5 h-5" />
