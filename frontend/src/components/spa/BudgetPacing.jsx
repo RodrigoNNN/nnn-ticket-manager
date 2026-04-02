@@ -37,15 +37,16 @@ function getCurrentStage(month) {
 }
 
 export default function BudgetPacing({ spa, month, onMonthChange }) {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isViewingAsOther } = useAuth();
+  const effectiveAdmin = isAdmin && !isViewingAsOther;
   const [reports, setReports] = useState({});
   const [editValues, setEditValues] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
 
   // Marketing + Admin can edit; Accounting can view read-only; others hidden
-  const canView = isAdmin || user?.department === 'Marketing' || user?.department === 'Accounting';
-  const canEdit = isAdmin || user?.department === 'Marketing';
+  const canView = effectiveAdmin || user?.department === 'Marketing' || user?.department === 'Accounting';
+  const canEdit = effectiveAdmin || user?.department === 'Marketing';
 
   if (!canView) return null;
 

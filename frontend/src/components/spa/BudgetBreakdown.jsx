@@ -17,7 +17,8 @@ function fmtUSD(val) {
 }
 
 export default function BudgetBreakdown({ spa, month: monthProp, onMonthChange }) {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isViewingAsOther } = useAuth();
+  const effectiveAdmin = isAdmin && !isViewingAsOther;
   const [localMonth, setLocalMonth] = useState(format(new Date(), 'yyyy-MM'));
   const month = monthProp || localMonth;
   const setMonth = onMonthChange || setLocalMonth;
@@ -28,8 +29,8 @@ export default function BudgetBreakdown({ spa, month: monthProp, onMonthChange }
   const [dirty, setDirty] = useState(false);
 
   // Accounting + Admin can edit; Marketing can view read-only; others hidden
-  const canView = isAdmin || user?.department === 'Accounting' || user?.department === 'Marketing';
-  const canEdit = isAdmin || user?.department === 'Accounting';
+  const canView = effectiveAdmin || user?.department === 'Accounting' || user?.department === 'Marketing';
+  const canEdit = effectiveAdmin || user?.department === 'Accounting';
 
   if (!canView) return null;
 

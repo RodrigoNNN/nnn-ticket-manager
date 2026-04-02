@@ -20,8 +20,9 @@ import toast from 'react-hot-toast';
 export default function ClientHistory() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user: authUser, isAdmin } = useAuth();
-  const showBudgetTab = isAdmin || authUser?.department === 'Accounting' || authUser?.department === 'Marketing';
+  const { user: authUser, isAdmin, isViewingAsOther } = useAuth();
+  const effectiveAdmin = isAdmin && !isViewingAsOther;
+  const showBudgetTab = effectiveAdmin || authUser?.department === 'Accounting' || authUser?.department === 'Marketing';
   const [activeTab, setActiveTab] = useState('profile');
   const [editing, setEditing] = useState(false);
   const [spa, setSpa] = useState(null);
