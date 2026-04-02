@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchSpaById, fetchTicketsBySpa, updateSpa as apiUpdateSpa, updateSpaTeam, addSpaPromo, updateSpaPromo, deleteSpaPromo, fetchOnboardingForms } from '../utils/api-service';
+import { useAuth } from '../context/AuthContext';
 import { TICKET_TYPE_COLORS, TIER_DEFINITIONS } from '../utils/constants';
 import PriorityBadge from '../components/common/PriorityBadge';
 import DepartmentDots from '../components/common/DepartmentDots';
@@ -144,6 +145,8 @@ export default function ClientHistory() {
 }
 
 function SpaProfile({ spa, editing, setEditing, onRefresh }) {
+  const { user, isAdmin } = useAuth();
+  const canEditPayment = isAdmin || user?.department === 'Accounting';
   const [onboardingFields, setOnboardingFields] = useState([]);
 
   useEffect(() => {
@@ -348,7 +351,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide flex items-center gap-1.5">
           <Calendar className="w-4 h-4" /> Payment Schedule
         </h3>
-        {editing ? (
+        {editing && canEditPayment ? (
           <select
             value={editData.payment_schedule}
             onChange={e => setEditData(prev => ({ ...prev, payment_schedule: e.target.value }))}
