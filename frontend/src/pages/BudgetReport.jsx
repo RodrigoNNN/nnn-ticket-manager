@@ -52,9 +52,9 @@ export default function BudgetReport() {
         fetchAllBudgetReports(month),
       ]);
 
-      // Filter spas assigned to this user's marketing team (or all if admin)
+      // Filter spas: admin + accounting see all, marketing sees their assigned spas
       let filteredSpas = allSpas;
-      if (!effectiveAdmin) {
+      if (!effectiveAdmin && user?.department !== 'Accounting') {
         filteredSpas = allSpas.filter(spa => {
           const teamIds = spa.assigned_team?.Marketing || [];
           return teamIds.includes(user.id);
