@@ -176,6 +176,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
       monthly_budget: spa.monthly_budget ? String(spa.monthly_budget) : '',
       arrival_goal: spa.arrival_goal ? String(spa.arrival_goal) : '',
       payment_schedule: spa.payment_schedule || 'monthly',
+      ads_manager_url: spa.ads_manager_url || '',
       assigned_team: spa.assigned_team ? JSON.parse(JSON.stringify(spa.assigned_team)) : { Management: [], Marketing: [], IT: [], Accounting: [] },
       promos: JSON.parse(JSON.stringify(spa.promos || [])),
       onboarding_data: { ...(spa.onboarding_data || {}) },
@@ -200,6 +201,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
         monthly_budget: editData.monthly_budget ? Number(editData.monthly_budget) : null,
         arrival_goal: editData.arrival_goal ? Number(editData.arrival_goal) : null,
         payment_schedule: editData.payment_schedule,
+        ads_manager_url: editData.ads_manager_url,
         onboarding_data: editData.onboarding_data,
         extra_fields: editData.extra_fields,
       });
@@ -375,6 +377,30 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
           <p className="text-lg font-bold text-gray-900 dark:text-white capitalize">
             {spa.payment_schedule || 'Monthly'}
           </p>
+        )}
+      </div>
+
+      {/* Ads Manager URL */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide flex items-center gap-1.5">
+          <Link2 className="w-4 h-4" /> Ads Manager URL
+        </h3>
+        {editing ? (
+          <input
+            type="url"
+            value={editData.ads_manager_url}
+            onChange={e => setEditData(prev => ({ ...prev, ads_manager_url: e.target.value }))}
+            className="input-field"
+            placeholder="https://adsmanager.facebook.com/..."
+          />
+        ) : (
+          spa.ads_manager_url ? (
+            <a href={spa.ads_manager_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 break-all">
+              {spa.ads_manager_url}
+            </a>
+          ) : (
+            <p className="text-sm text-gray-400 italic">No ads manager URL set</p>
+          )
         )}
       </div>
 

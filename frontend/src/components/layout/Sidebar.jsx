@@ -6,7 +6,7 @@ import { DEPARTMENTS, DEPT_COLORS } from '../../utils/constants';
 import {
   LayoutDashboard, KanbanSquare, PlusCircle, Settings,
   Bell, LogOut, Sun, Moon, ClipboardList, X, Building2,
-  ChevronDown, Check, ArrowLeftCircle, Lock, User,
+  ChevronDown, Check, ArrowLeftCircle, Lock, User, DollarSign,
 } from 'lucide-react';
 
 export default function Sidebar({ open, onClose, onChangePassword }) {
@@ -32,6 +32,7 @@ export default function Sidebar({ open, onClose, onChangePassword }) {
     { to: '/clients', icon: Building2, label: 'Clients' },
     { to: '/create', icon: PlusCircle, label: 'Create Ticket' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },
+    ...((isAdmin && !isViewingAsOther) || user?.department === 'Marketing' ? [{ to: '/budget-report', icon: DollarSign, label: 'Budget Report' }] : []),
     ...(!isViewingAsOther ? [{ to: '/profile', icon: User, label: 'My Profile' }] : []),
     ...(isAdmin && !isViewingAsOther ? [{ to: '/settings', icon: Settings, label: 'Settings' }] : []),
   ];
