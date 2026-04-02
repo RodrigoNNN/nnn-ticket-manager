@@ -10,6 +10,7 @@ import TierSelector from '../components/spa/TierSelector';
 import PromoManager from '../components/spa/PromoManager';
 import SpaTeamEditor from '../components/spa/SpaTeamEditor';
 import SpaTeamBadges from '../components/spa/SpaTeamBadges';
+import BudgetBreakdown from '../components/spa/BudgetBreakdown';
 import { ArrowLeft, Building2, MapPin, Ticket, PlusCircle, Pencil, Save, X, DollarSign, Target, Calendar, Plus, Trash2, Users, Loader2, Link2 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -114,6 +115,12 @@ export default function ClientHistory() {
           Profile
         </button>
         <button
+          onClick={() => setActiveTab('budget')}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'budget' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+        >
+          Budget
+        </button>
+        <button
           onClick={() => setActiveTab('tickets')}
           className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'tickets' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
         >
@@ -123,6 +130,10 @@ export default function ClientHistory() {
 
       {activeTab === 'profile' && (
         <SpaProfile spa={spa} editing={editing} setEditing={setEditing} onRefresh={refresh} />
+      )}
+
+      {activeTab === 'budget' && (
+        <BudgetBreakdown spa={spa} />
       )}
 
       {activeTab === 'tickets' && (

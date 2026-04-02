@@ -404,6 +404,48 @@ export async function upsertSpaArrival(spaId, date, arrivals, notes = '', record
   return data;
 }
 
+// ─── Budget Allocations ───
+
+export async function fetchBudgetAllocations(spaId, month) {
+  const { data, error } = await supabase
+    .from('spa_budget_allocations')
+    .select('*')
+    .eq('spa_id', spaId)
+    .eq('month', month)
+    .order('sort_order');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function saveBudgetAllocations(spaId, month, rows, userId) {
+  // Delete existing rows for this spa+month, then insert fresh
+  const { error: delError } = await supabase
+    .from('spa_budget_allocations')
+    .delete()
+    .eq('spa_id', spaId)
+    .eq('month', month);
+  if (delError) throw delError;
+
+  if (rows.length === 0) return [];
+
+  const inserts = rows.map((row, i) => ({
+    id: `ba-${Date.now()}-${i}`,
+    spa_id: spaId,
+    month,
+    label: row.label || '',
+    amount: parseFloat(row.amount) || 0,
+    sort_order: i,
+    created_by: userId,
+  }));
+
+  const { data, error } = await supabase
+    .from('spa_budget_allocations')
+    .insert(inserts)
+    .select();
+  if (error) throw error;
+  return data || [];
+}
+
 // ─── Promo Snapshots (for revert logic) ───
 
 async function createPromoSnapshot(ticketId, promo) {
