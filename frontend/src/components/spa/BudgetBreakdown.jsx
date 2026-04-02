@@ -5,6 +5,17 @@ import { Plus, Trash2, Save, Loader2, ChevronLeft, ChevronRight, AlertTriangle }
 import { format, addMonths, subMonths } from 'date-fns';
 import toast from 'react-hot-toast';
 
+// Parse a string like "1,500.00" or "$1500" into a number
+function parseCurrency(val) {
+  if (typeof val === 'number') return val;
+  return parseFloat(String(val).replace(/[^0-9.\-]/g, '')) || 0;
+}
+
+// Format a number as "$1,500.00"
+function fmtUSD(val) {
+  return parseCurrency(val).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
 export default function BudgetBreakdown({ spa }) {
   const { user, isAdmin } = useAuth();
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -33,7 +44,7 @@ export default function BudgetBreakdown({ spa }) {
   useEffect(() => { loadAllocations(); }, [loadAllocations]);
 
   const addRow = () => {
-    setRows(prev => [...prev, { label: '', amount: 0 }]);
+    setRows(prev => [...prev, { label: '', amount: '' }]);
     setDirty(true);
   };
 
@@ -68,10 +79,9 @@ export default function BudgetBreakdown({ spa }) {
     setMonth(format(addMonths(new Date(month + '-01'), 1), 'yyyy-MM'));
   };
 
-  const totalAllocated = rows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+  const totalAllocated = rows.reduce((sum, r) => sum + parseCurrency(r.amount), 0);
   const budget = spa.monthly_budget || 0;
   const diff = budget - totalAllocated;
-  const diffAbs = Math.abs(diff).toFixed(2);
 
   return (
     <div className="card p-5">
@@ -95,9 +105,9 @@ export default function BudgetBreakdown({ spa }) {
 
       {/* Budget summary bar */}
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-3 px-1">
-        <span>Monthly budget: <strong className="text-gray-700 dark:text-gray-300">${budget.toLocaleString()}</strong></span>
+        <span>Monthly budget: <strong className="text-gray-700 dark:text-gray-300">{fmtUSD(budget)}</strong></span>
         <span>
-          Allocated: <strong className={totalAllocated > budget ? 'text-red-500' : 'text-gray-700 dark:text-gray-300'}>${totalAllocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          Allocated: <strong className={totalAllocated > budget ? 'text-red-500' : 'text-gray-700 dark:text-gray-300'}>{fmtUSD(totalAllocated)}</strong>
         </span>
       </div>
 
@@ -133,12 +143,20 @@ export default function BudgetBreakdown({ spa }) {
                         className="input-field text-sm py-1.5"
                       />
                       <input
-                        type="number"
-                        value={row.amount || ''}
+                        type="text"
+                        inputMode="decimal"
+                        value={row.amount}
                         onChange={(e) => updateRow(i, 'amount', e.target.value)}
+                        onBlur={() => {
+                          const num = parseCurrency(row.amount);
+                          updateRow(i, 'amount', num > 0 ? num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
+                        }}
+                        onFocus={(e) => {
+                          const num = parseCurrency(row.amount);
+                          if (num > 0) updateRow(i, 'amount', String(num));
+                          setTimeout(() => e.target.select(), 0);
+                        }}
                         placeholder="0.00"
-                        step="0.01"
-                        min="0"
                         className="input-field text-sm py-1.5 text-right"
                       />
                       <button
@@ -153,7 +171,7 @@ export default function BudgetBreakdown({ spa }) {
                     <>
                       <span className="text-sm text-gray-700 dark:text-gray-300">{row.label || '(no description)'}</span>
                       <span className="text-sm text-gray-700 dark:text-gray-300 text-right font-medium">
-                        ${parseFloat(row.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {fmtUSD(row.amount)}
                       </span>
                       <span />
                     </>
@@ -177,11 +195,11 @@ export default function BudgetBreakdown({ spa }) {
                 {Math.abs(diff) < 0.01
                   ? 'Fully allocated'
                   : diff > 0
-                    ? `$${diffAbs} unallocated`
-                    : `$${diffAbs} over budget`
+                    ? `${fmtUSD(diff)} unallocated`
+                    : `${fmtUSD(Math.abs(diff))} over budget`
                 }
               </span>
-              <span className="font-bold">Total: ${totalAllocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="font-bold">Total: {fmtUSD(totalAllocated)}</span>
             </div>
           )}
 

@@ -433,7 +433,7 @@ export async function saveBudgetAllocations(spaId, month, rows, userId) {
     spa_id: spaId,
     month,
     label: row.label || '',
-    amount: parseFloat(row.amount) || 0,
+    amount: parseFloat(String(row.amount).replace(/[^0-9.\-]/g, '')) || 0,
     sort_order: i,
     created_by: userId,
   }));
