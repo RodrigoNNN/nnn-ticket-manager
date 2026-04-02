@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { fetchSpas, fetchAllBudgetReports, upsertBudgetReport } from '../utils/api-service';
+import { fetchSpas, fetchAllBudgetReports, fetchBudgetReportsUpToMonth, upsertBudgetReport } from '../utils/api-service';
 import { ChevronLeft, ChevronRight, ExternalLink, Save, Loader2, CheckCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -36,6 +36,7 @@ export default function BudgetReport() {
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [spas, setSpas] = useState([]);
   const [reports, setReports] = useState({});
+  const [runningBalances, setRunningBalances] = useState({});
   const [editValues, setEditValues] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
@@ -47,9 +48,10 @@ export default function BudgetReport() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [allSpas, allReports] = await Promise.all([
+      const [allSpas, allReports, historicalReports] = await Promise.all([
         fetchSpas(),
         fetchAllBudgetReports(month),
+        fetchBudgetReportsUpToMonth(month),
       ]);
 
       // Filter spas: admin + accounting see all, marketing sees their assigned spas
@@ -63,13 +65,38 @@ export default function BudgetReport() {
       filteredSpas.sort((a, b) => a.name.localeCompare(b.name));
       setSpas(filteredSpas);
 
-      // Build reports map: { spaId: { 1: report, 2: report, 3: report } }
+      // Build reports map for current month: { spaId: { 1: report, 2: report, 3: report } }
       const map = {};
       for (const r of allReports) {
         if (!map[r.spa_id]) map[r.spa_id] = {};
         map[r.spa_id][r.stage] = r;
       }
       setReports(map);
+
+      // Compute running balances: sum of (budget - spent) for each month up to selected
+      const spaBudgetMap = {};
+      for (const spa of allSpas) spaBudgetMap[spa.id] = spa.monthly_budget || 0;
+
+      // Group historical spend by spa + month
+      const spendByMonth = {}; // { spaId: { month: totalSpent } }
+      for (const r of historicalReports) {
+        if (!spendByMonth[r.spa_id]) spendByMonth[r.spa_id] = {};
+        spendByMonth[r.spa_id][r.month] = (spendByMonth[r.spa_id][r.month] || 0) + (r.actual_spend || 0);
+      }
+
+      // Calculate running balance per spa
+      const balances = {};
+      for (const spa of filteredSpas) {
+        const budget = spaBudgetMap[spa.id] || 0;
+        const months = Object.keys(spendByMonth[spa.id] || {}).sort();
+        let cumulative = 0;
+        for (const m of months) {
+          const spent = spendByMonth[spa.id][m] || 0;
+          cumulative += budget - spent;
+        }
+        balances[spa.id] = cumulative;
+      }
+      setRunningBalances(balances);
 
       // Init edit values
       const edits = {};
@@ -172,6 +199,7 @@ export default function BudgetReport() {
                 </th>
                 <th className="text-center px-2 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide min-w-[100px]">Total Spent</th>
                 <th className="text-center px-2 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide min-w-[90px]">Credit</th>
+                <th className="text-center px-2 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide min-w-[110px]">Running Balance</th>
               </tr>
             </thead>
             <tbody>
@@ -282,6 +310,17 @@ export default function BudgetReport() {
                           : 'text-red-600 dark:text-red-400'
                     }`}>
                       {totalSpent > 0 ? fmtUSD(credit) : '—'}
+                    </td>
+
+                    {/* Running balance */}
+                    <td className={`px-2 py-3 text-center text-xs font-bold ${
+                      runningBalances[spa.id] == null || runningBalances[spa.id] === 0
+                        ? 'text-gray-400'
+                        : runningBalances[spa.id] > 0
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {runningBalances[spa.id] != null && runningBalances[spa.id] !== 0 ? fmtUSD(runningBalances[spa.id]) : '—'}
                     </td>
                   </tr>
                 );

@@ -470,6 +470,18 @@ export async function fetchAllBudgetReports(month) {
   return data || [];
 }
 
+export async function fetchBudgetReportsUpToMonth(month) {
+  const { data, error } = await supabase
+    .from('spa_budget_reports')
+    .select('*')
+    .lte('month', month)
+    .order('spa_id')
+    .order('month')
+    .order('stage');
+  if (error) throw error;
+  return data || [];
+}
+
 export async function upsertBudgetReport(spaId, month, stage, actualSpend, notes, userId) {
   const { data, error } = await supabase
     .from('spa_budget_reports')
