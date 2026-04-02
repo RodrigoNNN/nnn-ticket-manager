@@ -43,8 +43,9 @@ export default function BudgetPacing({ spa, month, onMonthChange }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
 
-  const canView = isAdmin || user?.department === 'Marketing';
-  const canEdit = canView;
+  // Marketing + Admin can edit; Accounting can view read-only; others hidden
+  const canView = isAdmin || user?.department === 'Marketing' || user?.department === 'Accounting';
+  const canEdit = isAdmin || user?.department === 'Marketing';
 
   if (!canView) return null;
 

@@ -27,8 +27,11 @@ export default function BudgetBreakdown({ spa, month: monthProp, onMonthChange }
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
-  // Accounting + admin can edit, everyone else is view-only
+  // Accounting + Admin can edit; Marketing can view read-only; others hidden
+  const canView = isAdmin || user?.department === 'Accounting' || user?.department === 'Marketing';
   const canEdit = isAdmin || user?.department === 'Accounting';
+
+  if (!canView) return null;
 
   const loadAllocations = useCallback(async () => {
     setLoading(true);
