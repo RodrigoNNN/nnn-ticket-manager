@@ -43,7 +43,11 @@ export default function BudgetPacing({ spa, month, onMonthChange }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
 
-  const canEdit = isAdmin || user?.department === 'Marketing' || user?.department === 'Accounting';
+  const canView = isAdmin || user?.department === 'Marketing';
+  const canEdit = canView;
+
+  if (!canView) return null;
+
   const budget = spa.monthly_budget || 0;
   const stages = getStages(month);
   const totalDays = stages.reduce((s, st) => s + st.days, 0);
