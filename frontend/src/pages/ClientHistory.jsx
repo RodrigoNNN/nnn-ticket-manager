@@ -162,6 +162,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
       tier: spa.tier,
       monthly_budget: spa.monthly_budget ? String(spa.monthly_budget) : '',
       arrival_goal: spa.arrival_goal ? String(spa.arrival_goal) : '',
+      payment_schedule: spa.payment_schedule || 'monthly',
       assigned_team: spa.assigned_team ? JSON.parse(JSON.stringify(spa.assigned_team)) : { Management: [], Marketing: [], IT: [], Accounting: [] },
       promos: JSON.parse(JSON.stringify(spa.promos || [])),
       onboarding_data: { ...(spa.onboarding_data || {}) },
@@ -185,6 +186,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
         tier: editData.tier,
         monthly_budget: editData.monthly_budget ? Number(editData.monthly_budget) : null,
         arrival_goal: editData.arrival_goal ? Number(editData.arrival_goal) : null,
+        payment_schedule: editData.payment_schedule,
         onboarding_data: editData.onboarding_data,
         extra_fields: editData.extra_fields,
       });
@@ -339,6 +341,28 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
             </p>
           )}
         </div>
+      </div>
+
+      {/* Payment Schedule */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide flex items-center gap-1.5">
+          <Calendar className="w-4 h-4" /> Payment Schedule
+        </h3>
+        {editing ? (
+          <select
+            value={editData.payment_schedule}
+            onChange={e => setEditData(prev => ({ ...prev, payment_schedule: e.target.value }))}
+            className="input-field"
+          >
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Biweekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        ) : (
+          <p className="text-lg font-bold text-gray-900 dark:text-white capitalize">
+            {spa.payment_schedule || 'Monthly'}
+          </p>
+        )}
       </div>
 
       {/* Promos */}

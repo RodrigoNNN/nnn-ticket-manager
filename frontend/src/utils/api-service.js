@@ -306,7 +306,7 @@ export async function createSpa(data) {
 
 export async function updateSpa(id, data) {
   const fields = {};
-  for (const key of ['name', 'location', 'country', 'status', 'tier', 'monthly_budget', 'arrival_goal', 'arrival_goal_min', 'arrival_goal_target', 'onboarding_data', 'extra_fields', 'onboarded_via']) {
+  for (const key of ['name', 'location', 'country', 'status', 'tier', 'monthly_budget', 'arrival_goal', 'arrival_goal_min', 'arrival_goal_target', 'payment_schedule', 'onboarding_data', 'extra_fields', 'onboarded_via']) {
     if (data[key] !== undefined) fields[key] = data[key];
   }
   if (Object.keys(fields).length) {

@@ -319,6 +319,11 @@ export default function Clients() {
                       ${spa.monthly_budget.toLocaleString()}/mo
                     </span>
                   )}
+                  {spa.payment_schedule && spa.payment_schedule !== 'monthly' && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium capitalize">
+                      {spa.payment_schedule}
+                    </span>
+                  )}
                 </div>
                 {showAdminFeatures && (
                   <button
