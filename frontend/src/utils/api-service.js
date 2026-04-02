@@ -446,6 +446,39 @@ export async function saveBudgetAllocations(spaId, month, rows, userId) {
   return data || [];
 }
 
+// ─── Budget Reports (3-stage) ───
+
+export async function fetchBudgetReports(spaId, month) {
+  const { data, error } = await supabase
+    .from('spa_budget_reports')
+    .select('*')
+    .eq('spa_id', spaId)
+    .eq('month', month)
+    .order('stage');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertBudgetReport(spaId, month, stage, actualSpend, notes, userId) {
+  const { data, error } = await supabase
+    .from('spa_budget_reports')
+    .upsert({
+      id: `br-${spaId}-${month}-${stage}`,
+      spa_id: spaId,
+      month,
+      stage,
+      actual_spend: parseFloat(String(actualSpend).replace(/[^0-9.\-]/g, '')) || 0,
+      notes: notes || '',
+      reported_by: userId,
+      reported_at: new Date().toISOString(),
+    }, { onConflict: 'spa_id,month,stage' })
+    .select();
+  if (error) throw error;
+  return data?.[0];
+}
+
+// ─── Budget Notes ───
+
 export async function fetchBudgetNotes(spaId, month) {
   const { data, error } = await supabase
     .from('spa_budget_notes')

@@ -12,6 +12,7 @@ import PromoManager from '../components/spa/PromoManager';
 import SpaTeamEditor from '../components/spa/SpaTeamEditor';
 import SpaTeamBadges from '../components/spa/SpaTeamBadges';
 import BudgetBreakdown from '../components/spa/BudgetBreakdown';
+import BudgetPacing from '../components/spa/BudgetPacing';
 import { ArrowLeft, Building2, MapPin, Ticket, PlusCircle, Pencil, Save, X, DollarSign, Target, Calendar, Plus, Trash2, Users, Loader2, Link2 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -24,6 +25,7 @@ export default function ClientHistory() {
   const [spa, setSpa] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [budgetMonth, setBudgetMonth] = useState(format(new Date(), 'yyyy-MM'));
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -134,7 +136,10 @@ export default function ClientHistory() {
       )}
 
       {activeTab === 'budget' && (
-        <BudgetBreakdown spa={spa} />
+        <div className="space-y-6">
+          <BudgetBreakdown spa={spa} month={budgetMonth} onMonthChange={setBudgetMonth} />
+          <BudgetPacing spa={spa} month={budgetMonth} />
+        </div>
       )}
 
       {activeTab === 'tickets' && (

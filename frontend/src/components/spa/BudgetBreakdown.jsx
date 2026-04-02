@@ -16,9 +16,11 @@ function fmtUSD(val) {
   return parseCurrency(val).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-export default function BudgetBreakdown({ spa }) {
+export default function BudgetBreakdown({ spa, month: monthProp, onMonthChange }) {
   const { user, isAdmin } = useAuth();
-  const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [localMonth, setLocalMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const month = monthProp || localMonth;
+  const setMonth = onMonthChange || setLocalMonth;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [instructions, setInstructions] = useState('');
