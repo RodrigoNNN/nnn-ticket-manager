@@ -306,7 +306,7 @@ export async function createSpa(data) {
 
 export async function updateSpa(id, data) {
   const fields = {};
-  for (const key of ['name', 'location', 'country', 'status', 'tier', 'monthly_budget', 'arrival_goal', 'arrival_goal_min', 'arrival_goal_target', 'payment_schedule', 'onboarding_data', 'extra_fields', 'onboarded_via']) {
+  for (const key of ['name', 'location', 'country', 'status', 'tier', 'monthly_budget', 'arrival_goal', 'arrival_goal_min', 'arrival_goal_target', 'payment_schedule', 'ads_manager_url', 'onboarding_data', 'extra_fields', 'onboarded_via']) {
     if (data[key] !== undefined) fields[key] = data[key];
   }
   if (Object.keys(fields).length) {
@@ -454,6 +454,17 @@ export async function fetchBudgetReports(spaId, month) {
     .select('*')
     .eq('spa_id', spaId)
     .eq('month', month)
+    .order('stage');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchAllBudgetReports(month) {
+  const { data, error } = await supabase
+    .from('spa_budget_reports')
+    .select('*')
+    .eq('month', month)
+    .order('spa_id')
     .order('stage');
   if (error) throw error;
   return data || [];
