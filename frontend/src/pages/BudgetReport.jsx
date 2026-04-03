@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { fetchSpas, fetchAllBudgetReports, fetchBudgetReportsUpToMonth, upsertBudgetReport } from '../utils/api-service';
+import { fetchSpas, fetchAllBudgetReports, fetchBudgetReportsUpToMonth, upsertBudgetReport, fetchAllMonthAdjustments, fetchAppliedCreditsForMonth } from '../utils/api-service';
 import { ChevronLeft, ChevronRight, ExternalLink, Save, Loader2, CheckCircle, TrendingUp, TrendingDown, Eye, Users } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -95,6 +95,8 @@ export default function BudgetReport() {
   const [runningBalances, setRunningBalances] = useState({});
   const [editValues, setEditValues] = useState({});
   const [allSpasData, setAllSpasData] = useState([]);
+  const [adjustments, setAdjustments] = useState({});
+  const [appliedCredits, setAppliedCredits] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
   const [showAll, setShowAll] = useState(false);
@@ -103,13 +105,28 @@ export default function BudgetReport() {
   const canEdit = effectiveAdmin || user?.department === 'Marketing';
   const currentStage = getCurrentStage(month);
 
+  const getEffectiveBudget = (spaId, baseBudget) => {
+    const spaAdj = adjustments[spaId] || [];
+    const incoming = appliedCredits[spaId] || [];
+    let effective = baseBudget;
+    for (const a of spaAdj) {
+      if (a.type === 'add_budget' && a.status === 'active') effective += a.amount;
+      if (a.type === 'lower_budget' && a.status === 'active') effective -= a.amount;
+      if (a.type === 'credit_hold' && a.status === 'active') effective -= a.amount;
+    }
+    for (const c of incoming) effective += c.amount;
+    return Math.max(0, effective);
+  };
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [allSpas, allReports, historicalReports] = await Promise.all([
+      const [allSpas, allReports, historicalReports, allAdjustments, allAppliedCredits] = await Promise.all([
         fetchSpas(),
         fetchAllBudgetReports(month),
         fetchBudgetReportsUpToMonth(month),
+        fetchAllMonthAdjustments(month),
+        fetchAppliedCreditsForMonth(month),
       ]);
 
       // Store all spas for admin toggle
@@ -146,6 +163,22 @@ export default function BudgetReport() {
         map[r.spa_id][r.stage] = r;
       }
       setReports(map);
+
+      // Build adjustments map: { spaId: [adj1, adj2, ...] }
+      const adjMap = {};
+      for (const adj of allAdjustments) {
+        if (!adjMap[adj.spa_id]) adjMap[adj.spa_id] = [];
+        adjMap[adj.spa_id].push(adj);
+      }
+      setAdjustments(adjMap);
+
+      // Build applied credits map: credits from other months applied TO this month
+      const credMap = {};
+      for (const c of allAppliedCredits) {
+        if (!credMap[c.spa_id]) credMap[c.spa_id] = [];
+        credMap[c.spa_id].push(c);
+      }
+      setAppliedCredits(credMap);
 
       // Compute running balances: sum of (budget - spent) for each month up to selected
       const spaBudgetMap = {};
@@ -301,7 +334,7 @@ export default function BudgetReport() {
             </thead>
             <tbody>
               {spas.map(spa => {
-                const budget = spa.monthly_budget || 0;
+                const budget = getEffectiveBudget(spa.id, spa.monthly_budget || 0);
                 const stageSpends = { 1: reports[spa.id]?.[1]?.actual_spend || 0, 2: reports[spa.id]?.[2]?.actual_spend || 0, 3: reports[spa.id]?.[3]?.actual_spend || 0 };
                 const stageHasReport = { 1: (reports[spa.id]?.[1]?.actual_spend || 0) > 0, 2: (reports[spa.id]?.[2]?.actual_spend || 0) > 0, 3: (reports[spa.id]?.[3]?.actual_spend || 0) > 0 };
                 const totalSpent = stageSpends[1] + stageSpends[2] + stageSpends[3];
@@ -314,6 +347,9 @@ export default function BudgetReport() {
                     <td className="px-4 py-3 sticky left-0 bg-white dark:bg-gray-900 z-10">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-gray-900 dark:text-white">{spa.name}</span>
+                        {spa.tag && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-mono font-medium">{spa.tag}</span>
+                        )}
                         {spa.ads_manager_url && (
                           <a
                             href={spa.ads_manager_url}
