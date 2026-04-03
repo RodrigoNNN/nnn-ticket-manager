@@ -391,14 +391,15 @@ export default function PaymentTracking() {
   const getEffectiveBudget = (spaId, baseBudget) => {
     const spaAdj = adjustments[spaId] || [];
     const incoming = appliedCredits[spaId] || [];
-    let effective = baseBudget;
+    let effective = Number(baseBudget) || 0;
     for (const a of spaAdj) {
-      if (a.type === 'add_budget' && a.status === 'active') effective += a.amount;
-      if (a.type === 'lower_budget' && a.status === 'active') effective -= a.amount;
-      if (a.type === 'credit_hold' && a.status === 'active') effective -= a.amount;
+      const amt = Number(a.amount) || 0;
+      if (a.type === 'add_budget' && a.status === 'active') effective += amt;
+      if (a.type === 'lower_budget' && a.status === 'active') effective -= amt;
+      if (a.type === 'credit_hold' && a.status === 'active') effective -= amt;
     }
     // Add credits applied from other months
-    for (const c of incoming) effective += c.amount;
+    for (const c of incoming) effective += (Number(c.amount) || 0);
     return Math.max(0, effective);
   };
 
