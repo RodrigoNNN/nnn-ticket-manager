@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { fetchSpas, fetchAllBudgetReports, fetchBudgetReportsUpToMonth, upsertBudgetReport } from '../utils/api-service';
-import { ChevronLeft, ChevronRight, ExternalLink, Save, Loader2, CheckCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Save, Loader2, CheckCircle, TrendingUp, TrendingDown, Eye, Users } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -81,14 +81,16 @@ function getDailyPaces(budget, month, stageSpends) {
 }
 
 export default function BudgetReport() {
-  const { user, isAdmin, isViewingAsOther } = useAuth();
+  const { user, isAdmin, isViewingAsOther, allUsers } = useAuth();
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [spas, setSpas] = useState([]);
   const [reports, setReports] = useState({});
   const [runningBalances, setRunningBalances] = useState({});
   const [editValues, setEditValues] = useState({});
+  const [allSpasData, setAllSpasData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
+  const [showAll, setShowAll] = useState(false);
 
   const effectiveAdmin = isAdmin && !isViewingAsOther;
   const canEdit = effectiveAdmin || user?.department === 'Marketing';
@@ -103,15 +105,31 @@ export default function BudgetReport() {
         fetchBudgetReportsUpToMonth(month),
       ]);
 
-      // Filter spas: admin + accounting see all, marketing sees their assigned spas
-      let filteredSpas = allSpas;
-      if (!effectiveAdmin && user?.department !== 'Accounting') {
+      // Store all spas for admin toggle
+      allSpas.sort((a, b) => a.name.localeCompare(b.name));
+      setAllSpasData(allSpas);
+
+      // Filter spas based on role and showAll toggle
+      let filteredSpas;
+      if (effectiveAdmin && showAll) {
+        // Admin "All Clients" mode: show everything
+        filteredSpas = allSpas;
+      } else if (effectiveAdmin) {
+        // Admin default: show their assigned spas (like a marketing member)
+        filteredSpas = allSpas.filter(spa => {
+          const teamIds = spa.assigned_team?.Marketing || [];
+          return teamIds.includes(user.id);
+        });
+      } else if (user?.department === 'Accounting') {
+        // Accounting always sees all
+        filteredSpas = allSpas;
+      } else {
+        // Marketing: only their assigned spas
         filteredSpas = allSpas.filter(spa => {
           const teamIds = spa.assigned_team?.Marketing || [];
           return teamIds.includes(user.id);
         });
       }
-      filteredSpas.sort((a, b) => a.name.localeCompare(b.name));
       setSpas(filteredSpas);
 
       // Build reports map for current month: { spaId: { 1: report, 2: report, 3: report } }
@@ -162,7 +180,7 @@ export default function BudgetReport() {
     } finally {
       setLoading(false);
     }
-  }, [month, user?.id, effectiveAdmin]);
+  }, [month, user?.id, effectiveAdmin, showAll]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -202,7 +220,22 @@ export default function BudgetReport() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Budget Report</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Budget Report</h1>
+          {effectiveAdmin && (
+            <button
+              onClick={() => setShowAll(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                showAll
+                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              {showAll ? <Users className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {showAll ? 'All Clients' : 'My Clients'}
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
             <ChevronLeft className="w-5 h-5" />
@@ -230,6 +263,9 @@ export default function BudgetReport() {
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide sticky left-0 bg-gray-50 dark:bg-gray-800/50 z-10 min-w-[180px]">Client</th>
+                {effectiveAdmin && showAll && (
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide min-w-[130px]">Assigned To</th>
+                )}
                 <th className="text-center px-2 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide min-w-[60px]">Budget</th>
                 <th className="text-center px-2 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide min-w-[100px]">Daily Pace</th>
                 <th className="text-center px-2 py-3 text-xs font-semibold uppercase tracking-wide min-w-[170px]">
@@ -281,6 +317,49 @@ export default function BudgetReport() {
                       </div>
                       {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
                     </td>
+
+                    {/* Assigned Marketing member (admin showAll only) */}
+                    {effectiveAdmin && showAll && (() => {
+                      const marketingIds = spa.assigned_team?.Marketing || [];
+                      const marketingNames = marketingIds
+                        .map(id => allUsers.find(u => u.id === id))
+                        .filter(Boolean);
+                      const hasAnyReport = totalSpent > 0;
+                      const stagesReported = [1, 2, 3].filter(s => (reports[spa.id]?.[s]?.actual_spend || 0) > 0).length;
+
+                      return (
+                        <td className="px-2 py-3">
+                          {marketingNames.length > 0 ? (
+                            <div>
+                              {marketingNames.map(u => (
+                                <p key={u.id} className="text-xs text-gray-700 dark:text-gray-300">{u.name}</p>
+                              ))}
+                              <div className="flex items-center gap-1 mt-1">
+                                {currentStage ? (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                    stagesReported >= currentStage
+                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                  }`}>
+                                    {stagesReported >= currentStage ? 'Up to date' : `${stagesReported}/${currentStage} reported`}
+                                  </span>
+                                ) : hasAnyReport ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                    {stagesReported}/3 reported
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                                    No data
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-gray-400 italic">Unassigned</span>
+                          )}
+                        </td>
+                      );
+                    })()}
 
                     {/* Budget */}
                     <td className="px-2 py-3 text-center text-xs font-medium text-gray-600 dark:text-gray-400">
