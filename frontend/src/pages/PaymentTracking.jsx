@@ -189,6 +189,21 @@ export default function PaymentTracking() {
     }
   };
 
+  const handleAmountDue = async (spaId, period, value) => {
+    const num = parseFloat(String(value).replace(/[^0-9.\-]/g, '')) || 0;
+    if (num < 0) return;
+    setSaving(`due-${spaId}-${period}`);
+    try {
+      await upsertPaymentTracking(spaId, month, { amount_due: num }, user.id, period);
+      toast.success('Amount due updated');
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to update amount due');
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const handleAddNote = async (spaId) => {
     const text = (noteInputs[spaId] || '').trim();
     if (!text) return;
@@ -278,10 +293,35 @@ export default function PaymentTracking() {
           </div>
         )}
 
-        {/* Amount due for this period */}
+        {/* Amount due for this period — editable, falls back to calculated */}
         <div className="text-center min-w-[80px]">
           <p className="text-[10px] text-gray-400 uppercase tracking-wide">Due</p>
-          <p className="text-sm font-bold text-gray-900 dark:text-white">{pd.amountDue > 0 ? fmtUSD(pd.amountDue) : '—'}</p>
+          {canEdit ? (
+            <input
+              type="text"
+              inputMode="decimal"
+              defaultValue={(() => {
+                const saved = p.amount_due;
+                return (saved && saved > 0) ? saved.toLocaleString('en-US', { minimumFractionDigits: 2 }) : pd.amountDue > 0 ? pd.amountDue.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '';
+              })()}
+              onBlur={(e) => {
+                const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
+                if (num >= 0) {
+                  e.target.value = num > 0 ? num.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '';
+                  handleAmountDue(spa.id, pd.period, num);
+                }
+              }}
+              placeholder={pd.amountDue > 0 ? pd.amountDue.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}
+              className="input-field text-xs py-1 text-center w-24 mt-0.5"
+            />
+          ) : (
+            <p className="text-sm font-bold text-gray-900 dark:text-white">
+              {(() => {
+                const display = (p.amount_due && p.amount_due > 0) ? p.amount_due : pd.amountDue;
+                return display > 0 ? fmtUSD(display) : '—';
+              })()}
+            </p>
+          )}
         </div>
 
         {/* Amount paid */}
@@ -548,11 +588,43 @@ export default function PaymentTracking() {
                           {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
                         </div>
 
-                        {/* Monthly total */}
-                        <div className="text-center min-w-[80px]">
-                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Monthly</p>
-                          <p className="text-sm font-bold text-gray-900 dark:text-white">{budget > 0 ? fmtUSD(budget) : '—'}</p>
-                        </div>
+                        {/* Monthly total (multi-period) or editable Due (single period) */}
+                        {periodCount > 1 ? (
+                          <div className="text-center min-w-[80px]">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Monthly</p>
+                            <p className="text-sm font-bold text-gray-900 dark:text-white">{budget > 0 ? fmtUSD(budget) : '—'}</p>
+                          </div>
+                        ) : (
+                          <div className="text-center min-w-[80px]">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Due</p>
+                            {canEdit ? (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                defaultValue={(() => {
+                                  const saved = spaPayments[1]?.amount_due;
+                                  return (saved && saved > 0) ? saved.toLocaleString('en-US', { minimumFractionDigits: 2 }) : budget > 0 ? budget.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '';
+                                })()}
+                                onBlur={(e) => {
+                                  const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
+                                  if (num >= 0) {
+                                    e.target.value = num > 0 ? num.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '';
+                                    handleAmountDue(spa.id, 1, num);
+                                  }
+                                }}
+                                placeholder={budget > 0 ? budget.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}
+                                className="input-field text-xs py-1 text-center w-24 mt-0.5"
+                              />
+                            ) : (
+                              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                {(() => {
+                                  const display = (spaPayments[1]?.amount_due && spaPayments[1].amount_due > 0) ? spaPayments[1].amount_due : budget;
+                                  return display > 0 ? fmtUSD(display) : '—';
+                                })()}
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         {/* Running balance */}
                         <div className="text-center min-w-[90px]">
