@@ -299,7 +299,7 @@ export default function BudgetReport() {
               {spas.map(spa => {
                 const budget = spa.monthly_budget || 0;
                 const stageSpends = { 1: reports[spa.id]?.[1]?.actual_spend || 0, 2: reports[spa.id]?.[2]?.actual_spend || 0, 3: reports[spa.id]?.[3]?.actual_spend || 0 };
-                const stageHasReport = { 1: reports[spa.id]?.[1] != null, 2: reports[spa.id]?.[2] != null, 3: reports[spa.id]?.[3] != null };
+                const stageHasReport = { 1: (reports[spa.id]?.[1]?.actual_spend || 0) > 0, 2: (reports[spa.id]?.[2]?.actual_spend || 0) > 0, 3: (reports[spa.id]?.[3]?.actual_spend || 0) > 0 };
                 const totalSpent = stageSpends[1] + stageSpends[2] + stageSpends[3];
                 const credit = budget - totalSpent;
                 const pace = getDailyPaces(budget, month, stageSpends, stageHasReport);
