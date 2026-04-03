@@ -309,6 +309,22 @@ export default function PaymentTracking() {
     }
   };
 
+  const handleTagSave = async (spaId, newTag) => {
+    const trimmed = newTag.trim() || null;
+    const currentSpa = spas.find(s => s.id === spaId);
+    if ((currentSpa?.tag || '') === (trimmed || '')) return; // no change
+    setSaving(`tag-${spaId}`);
+    try {
+      await updateSpa(spaId, { tag: trimmed });
+      flashSaved(`card-${spaId}`);
+      await loadData(true);
+    } catch (err) {
+      toast.error(err.message?.includes('idx_spas_tag') ? 'Tag already in use by another client' : 'Failed to update tag');
+    } finally {
+      setSaving(null);
+    }
+  };
+
   // ─── Adjustment handlers ───
 
   const handleCreateAdjustment = async () => {
@@ -735,17 +751,31 @@ export default function PaymentTracking() {
 
                       {/* Inline settings editor */}
                       {isSettingsOpen && canEdit && (
-                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-3">
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Payment Type:</span>
-                          <select
-                            value={spa.payment_type || 'credit_card'}
-                            onChange={(e) => handlePaymentTypeChange(spa.id, e.target.value)}
-                            disabled={saving === `type-${spa.id}`}
-                            className="input-field text-xs py-1 w-auto"
-                          >
-                            <option value="credit_card">Credit Card</option>
-                            <option value="invoice">Invoice</option>
-                          </select>
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide">Tag:</span>
+                            <input
+                              type="text"
+                              defaultValue={spa.tag || ''}
+                              placeholder="e.g. tag32"
+                              onBlur={(e) => handleTagSave(spa.id, e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                              disabled={saving === `tag-${spa.id}`}
+                              className="input-field text-xs py-1 w-24 font-mono"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide">Type:</span>
+                            <select
+                              value={spa.payment_type || 'credit_card'}
+                              onChange={(e) => handlePaymentTypeChange(spa.id, e.target.value)}
+                              disabled={saving === `type-${spa.id}`}
+                              className="input-field text-xs py-1 w-auto"
+                            >
+                              <option value="credit_card">Credit Card</option>
+                              <option value="invoice">Invoice</option>
+                            </select>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -972,6 +1002,18 @@ export default function PaymentTracking() {
                       {/* Settings editor (inline) */}
                       {isSettingsOpen && canEdit && (
                         <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-4 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide">Tag:</span>
+                            <input
+                              type="text"
+                              defaultValue={spa.tag || ''}
+                              placeholder="e.g. tag32"
+                              onBlur={(e) => handleTagSave(spa.id, e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                              disabled={saving === `tag-${spa.id}`}
+                              className="input-field text-xs py-1 w-24 font-mono"
+                            />
+                          </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-gray-400 uppercase tracking-wide">Type:</span>
                             <select value={spa.payment_type || 'invoice'} onChange={(e) => handlePaymentTypeChange(spa.id, e.target.value)} disabled={saving === `type-${spa.id}`} className="input-field text-xs py-1 w-auto">
