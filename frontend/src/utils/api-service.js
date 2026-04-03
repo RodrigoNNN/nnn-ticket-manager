@@ -567,13 +567,14 @@ export async function fetchPaymentNotes(spaId, month) {
   return data || [];
 }
 
-export async function addPaymentNote(spaId, month, note, userId) {
+export async function addPaymentNote(spaId, month, note, userId, noteType = 'regular') {
   const { data, error } = await supabase
     .from('spa_payment_notes')
     .insert({
       spa_id: spaId,
       month,
       note,
+      note_type: noteType,
       created_by: userId,
     })
     .select();
@@ -616,7 +617,7 @@ export async function fetchAppliedCreditsForMonth(month) {
   return data || [];
 }
 
-export async function createMonthAdjustment(spaId, month, type, amount, note, userId) {
+export async function createMonthAdjustment(spaId, month, type, amount, note, userId, effectiveDate = null) {
   const { data, error } = await supabase
     .from('spa_month_adjustments')
     .insert({
@@ -626,6 +627,7 @@ export async function createMonthAdjustment(spaId, month, type, amount, note, us
       amount: Math.abs(amount),
       note: note || null,
       status: 'active',
+      effective_date: effectiveDate || null,
       created_by: userId,
     })
     .select();

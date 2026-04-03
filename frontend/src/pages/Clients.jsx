@@ -86,12 +86,15 @@ export default function Clients() {
   const getEffectiveBudget = (spaId, baseBudget) => {
     const spaAdj = adjustments[spaId] || [];
     const incoming = appliedCredits[spaId] || [];
+    const today = new Date().toISOString().slice(0, 10);
     let effective = Number(baseBudget) || 0;
     for (const a of spaAdj) {
+      if (a.status !== 'active') continue;
+      if (a.effective_date && a.effective_date > today) continue;
       const amt = Number(a.amount) || 0;
-      if (a.type === 'add_budget' && a.status === 'active') effective += amt;
-      if (a.type === 'lower_budget' && a.status === 'active') effective -= amt;
-      if (a.type === 'credit_hold' && a.status === 'active') effective -= amt;
+      if (a.type === 'add_budget') effective += amt;
+      if (a.type === 'lower_budget') effective -= amt;
+      if (a.type === 'credit_hold') effective -= amt;
     }
     for (const c of incoming) effective += (Number(c.amount) || 0);
     return Math.max(0, effective);

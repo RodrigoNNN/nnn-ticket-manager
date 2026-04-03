@@ -114,6 +114,10 @@ export default function PaymentTracking() {
   const [adjModal, setAdjModal] = useState(null);
   const [adjAmount, setAdjAmount] = useState('');
   const [adjNote, setAdjNote] = useState('');
+  const [adjDate, setAdjDate] = useState('');                   // effective date for scheduled adjustments
+  const [noteType, setNoteType] = useState('regular');           // regular | critical
+  const [extraPeriods, setExtraPeriods] = useState({});          // { spaId: [extra period numbers] }
+  const [tagEdits, setTagEdits] = useState({});                  // { spaId: value } controlled tag inputs
   const [filterStatus, setFilterStatus] = useState('all');     // all, paid, pending, overdue
   const [filterSchedule, setFilterSchedule] = useState('all'); // all, weekly, biweekly, monthly
   const [filterType, setFilterType] = useState('all');         // all, invoice, credit_card
@@ -182,6 +186,29 @@ export default function PaymentTracking() {
         creditMap[c.spa_id].push(c);
       }
       setAppliedCredits(creditMap);
+
+      // Init tag edits from spa data
+      const tags = {};
+      for (const spa of allSpas) tags[spa.id] = spa.tag || '';
+      setTagEdits(prev => {
+        const merged = { ...tags };
+        // Keep any in-progress edits
+        for (const id of Object.keys(prev)) {
+          if (tags[id] !== undefined && prev[id] !== tags[id]) merged[id] = tags[id];
+        }
+        return merged;
+      });
+
+      // Detect extra periods from existing payment records beyond standard count
+      const extras = {};
+      for (const spa of allSpas) {
+        const schedule = spa.payment_schedule || 'monthly';
+        const stdCount = schedule === 'weekly' ? 4 : schedule === 'biweekly' ? 2 : 1;
+        const spaPayments = payMap[spa.id] || {};
+        const extraNums = Object.keys(spaPayments).map(Number).filter(n => n > stdCount).sort((a, b) => a - b);
+        if (extraNums.length) extras[spa.id] = extraNums;
+      }
+      setExtraPeriods(prev => ({ ...prev, ...extras }));
 
       // Load notes
       const notesMap = {};
@@ -265,16 +292,17 @@ export default function PaymentTracking() {
     }
   };
 
-  const handleAddNote = async (spaId) => {
+  const handleAddNote = async (spaId, type = 'regular') => {
     const text = (noteInputs[spaId] || '').trim();
     if (!text) return;
     setSaving(`note-${spaId}`);
     try {
-      await addPaymentNote(spaId, month, text, user.id);
+      await addPaymentNote(spaId, month, text, user.id, type);
       setNoteInputs(prev => ({ ...prev, [spaId]: '' }));
+      setNoteType('regular');
       const updated = await fetchPaymentNotes(spaId, month);
       setNotes(prev => ({ ...prev, [spaId]: updated }));
-      toast.success('Note added');
+      toast.success(type === 'critical' ? '🚨 Critical note added' : 'Note added');
     } catch (err) {
       toast.error('Failed to add note');
     } finally {
@@ -309,13 +337,13 @@ export default function PaymentTracking() {
     }
   };
 
-  const handleTagSave = async (spaId, newTag) => {
-    const trimmed = newTag.trim() || null;
+  const handleTagSave = async (spaId) => {
+    const newTag = (tagEdits[spaId] ?? '').trim() || null;
     const currentSpa = spas.find(s => s.id === spaId);
-    if ((currentSpa?.tag || '') === (trimmed || '')) return; // no change
+    if ((currentSpa?.tag || '') === (newTag || '')) return; // no change
     setSaving(`tag-${spaId}`);
     try {
-      await updateSpa(spaId, { tag: trimmed });
+      await updateSpa(spaId, { tag: newTag });
       flashSaved(`card-${spaId}`);
       await loadData(true);
     } catch (err) {
@@ -333,12 +361,13 @@ export default function PaymentTracking() {
     if (num <= 0) return;
     setSaving('adj');
     try {
-      await createMonthAdjustment(adjModal.spaId, month, adjModal.type, num, adjNote, user.id);
+      await createMonthAdjustment(adjModal.spaId, month, adjModal.type, num, adjNote, user.id, adjDate || null);
       const label = adjModal.type === 'add_budget' ? 'Budget added' : adjModal.type === 'lower_budget' ? 'Budget lowered' : 'Credit saved';
-      toast.success(label);
+      toast.success(adjDate ? `${label} — effective ${adjDate}` : label);
       setAdjModal(null);
       setAdjAmount('');
       setAdjNote('');
+      setAdjDate('');
       await loadData(true);
     } catch (err) {
       toast.error('Failed to save adjustment');
@@ -391,12 +420,16 @@ export default function PaymentTracking() {
   const getEffectiveBudget = (spaId, baseBudget) => {
     const spaAdj = adjustments[spaId] || [];
     const incoming = appliedCredits[spaId] || [];
+    const today = format(new Date(), 'yyyy-MM-dd');
     let effective = Number(baseBudget) || 0;
     for (const a of spaAdj) {
+      if (a.status !== 'active') continue;
+      // Skip future-scheduled adjustments
+      if (a.effective_date && a.effective_date > today) continue;
       const amt = Number(a.amount) || 0;
-      if (a.type === 'add_budget' && a.status === 'active') effective += amt;
-      if (a.type === 'lower_budget' && a.status === 'active') effective -= amt;
-      if (a.type === 'credit_hold' && a.status === 'active') effective -= amt;
+      if (a.type === 'add_budget') effective += amt;
+      if (a.type === 'lower_budget') effective -= amt;
+      if (a.type === 'credit_hold') effective -= amt;
     }
     // Add credits applied from other months
     for (const c of incoming) effective += (Number(c.amount) || 0);
@@ -757,9 +790,10 @@ export default function PaymentTracking() {
                             <span className="text-[10px] text-gray-400 uppercase tracking-wide">Tag:</span>
                             <input
                               type="text"
-                              defaultValue={spa.tag || ''}
+                              value={tagEdits[spa.id] ?? spa.tag ?? ''}
                               placeholder="e.g. tag32"
-                              onBlur={(e) => handleTagSave(spa.id, e.target.value)}
+                              onChange={(e) => setTagEdits(prev => ({ ...prev, [spa.id]: e.target.value }))}
+                              onBlur={() => handleTagSave(spa.id)}
                               onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                               disabled={saving === `tag-${spa.id}`}
                               className="input-field text-xs py-1 w-24 font-mono"
@@ -980,8 +1014,33 @@ export default function PaymentTracking() {
                               ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
                               : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                           }`}>
-                            {isSpaExpanded ? 'Collapse' : `${periodCount} payments`}
+                            {isSpaExpanded ? 'Collapse' : `${periodCount + (extraPeriods[spa.id]?.length || 0)} payments`}
                             {isSpaExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        )}
+
+                        {/* Monthly: extra period expand/add */}
+                        {periodCount === 1 && (extraPeriods[spa.id]?.length > 0) && (
+                          <button onClick={() => toggleSpa(spa.id)} className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg transition-colors mt-1 ${
+                            isSpaExpanded
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}>
+                            {isSpaExpanded ? 'Collapse' : `+${extraPeriods[spa.id].length} extra`}
+                            {isSpaExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        )}
+                        {periodCount === 1 && canEdit && !(extraPeriods[spa.id]?.length > 0) && (
+                          <button
+                            onClick={() => {
+                              const nextNum = 2;
+                              setExtraPeriods(prev => ({ ...prev, [spa.id]: [nextNum] }));
+                              setExpandedSpas(prev => ({ ...prev, [spa.id]: true }));
+                            }}
+                            className="flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 px-2 py-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors mt-1"
+                            title="Add extra payment row"
+                          >
+                            <PlusCircle className="w-3 h-3" /> Extra
                           </button>
                         )}
 
@@ -1007,9 +1066,10 @@ export default function PaymentTracking() {
                             <span className="text-[10px] text-gray-400 uppercase tracking-wide">Tag:</span>
                             <input
                               type="text"
-                              defaultValue={spa.tag || ''}
+                              value={tagEdits[spa.id] ?? spa.tag ?? ''}
                               placeholder="e.g. tag32"
-                              onBlur={(e) => handleTagSave(spa.id, e.target.value)}
+                              onChange={(e) => setTagEdits(prev => ({ ...prev, [spa.id]: e.target.value }))}
+                              onBlur={() => handleTagSave(spa.id)}
                               onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                               disabled={saving === `tag-${spa.id}`}
                               className="input-field text-xs py-1 w-24 font-mono"
@@ -1037,15 +1097,15 @@ export default function PaymentTracking() {
                       {canEdit && (
                         <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'add_budget' }); setAdjAmount(''); setAdjNote(''); }}
+                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'add_budget' }); setAdjAmount(''); setAdjNote(''); setAdjDate(''); }}
                               className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 transition-colors">
                               <PlusCircle className="w-3 h-3" /> Add Budget
                             </button>
-                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'lower_budget' }); setAdjAmount(''); setAdjNote(''); }}
+                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'lower_budget' }); setAdjAmount(''); setAdjNote(''); setAdjDate(''); }}
                               className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors">
                               <MinusCircle className="w-3 h-3" /> Lower Budget
                             </button>
-                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'credit_hold' }); setAdjAmount(''); setAdjNote(''); }}
+                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'credit_hold' }); setAdjAmount(''); setAdjNote(''); setAdjDate(''); }}
                               className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1.5 rounded-lg bg-yellow-50 text-yellow-700 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:text-yellow-400 dark:hover:bg-yellow-900/30 transition-colors">
                               <Wallet className="w-3 h-3" /> Save as Credit
                             </button>
@@ -1054,15 +1114,20 @@ export default function PaymentTracking() {
                           {/* Active adjustments tags */}
                           {activeBudgetAdj.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
-                              {activeBudgetAdj.map(a => (
-                                <span key={a.id} className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${
-                                  a.type === 'add_budget' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                }`}>
-                                  {a.type === 'add_budget' ? '+' : '-'}{fmtUSD(a.amount)}
-                                  {a.note && <span className="text-[9px] opacity-70">({a.note})</span>}
-                                  <button onClick={() => handleDeleteAdjustment(a.id)} className="ml-0.5 hover:opacity-70"><Trash2 className="w-2.5 h-2.5" /></button>
-                                </span>
-                              ))}
+                              {activeBudgetAdj.map(a => {
+                                const isFuture = a.effective_date && a.effective_date > format(new Date(), 'yyyy-MM-dd');
+                                return (
+                                  <span key={a.id} className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${
+                                    isFuture ? 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600' :
+                                    a.type === 'add_budget' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                  }`}>
+                                    {a.type === 'add_budget' ? '+' : '-'}{fmtUSD(a.amount)}
+                                    {a.note && <span className="text-[9px] opacity-70">({a.note})</span>}
+                                    {isFuture && <span className="text-[9px] opacity-70">📅 {format(new Date(a.effective_date + 'T12:00:00'), 'MMM d')}</span>}
+                                    <button onClick={() => handleDeleteAdjustment(a.id)} className="ml-0.5 hover:opacity-70"><Trash2 className="w-2.5 h-2.5" /></button>
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
 
@@ -1103,16 +1168,57 @@ export default function PaymentTracking() {
                         </div>
                       )}
 
+                      {/* Extra rows for monthly spas */}
+                      {periodCount === 1 && isSpaExpanded && (extraPeriods[spa.id]?.length > 0) && (
+                        <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                          {(extraPeriods[spa.id] || []).map(epNum => {
+                            const epDef = { period: epNum, label: `Extra #${epNum - 1}`, deadline: format(new Date(month.split('-')[0], month.split('-')[1] - 1, getDaysInMonth(new Date(month.split('-')[0], month.split('-')[1] - 1))), 'yyyy-MM-dd'), amountDue: 0 };
+                            return renderPeriodRow(spa, epDef, spaPayments, false);
+                          })}
+                          {canEdit && (
+                            <button
+                              onClick={() => {
+                                const existing = extraPeriods[spa.id] || [];
+                                const nextNum = existing.length > 0 ? Math.max(...existing) + 1 : 2;
+                                setExtraPeriods(prev => ({ ...prev, [spa.id]: [...existing, nextNum] }));
+                              }}
+                              className="mt-2 flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            >
+                              <PlusCircle className="w-3 h-3" /> Add Extra Payment Row
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       {/* Multi-period rows */}
                       {periodCount > 1 && isSpaExpanded && (
                         <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
                           {periods.map(pd => renderPeriodRow(spa, pd, spaPayments, false))}
+                          {/* Extra periods */}
+                          {(extraPeriods[spa.id] || []).map(epNum => {
+                            const epDef = { period: epNum, label: `Extra #${epNum - periodCount}`, deadline: format(new Date(month.split('-')[0], month.split('-')[1] - 1, getDaysInMonth(new Date(month.split('-')[0], month.split('-')[1] - 1))), 'yyyy-MM-dd'), amountDue: 0 };
+                            return renderPeriodRow(spa, epDef, spaPayments, false);
+                          })}
+                          {/* Add extra period button */}
+                          {canEdit && (
+                            <button
+                              onClick={() => {
+                                const existing = extraPeriods[spa.id] || [];
+                                const nextNum = existing.length > 0 ? Math.max(...existing) + 1 : periodCount + 1;
+                                setExtraPeriods(prev => ({ ...prev, [spa.id]: [...existing, nextNum] }));
+                              }}
+                              className="mt-2 flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            >
+                              <PlusCircle className="w-3 h-3" /> Add Extra Payment Row
+                            </button>
+                          )}
                         </div>
                       )}
 
                       {/* Latest note preview (collapsed) */}
                       {!isNotesExpanded && latestNote && (
-                        <div className="mt-2 pl-1 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                        <div className={`mt-2 pl-1 flex items-center gap-2 text-[11px] ${latestNote.note_type === 'critical' ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+                          {latestNote.note_type === 'critical' && <span className="flex-shrink-0">🚨</span>}
                           <span className="truncate max-w-[400px]">{latestNote.note}</span>
                           <span className="flex-shrink-0">— {noteAuthor || 'Unknown'}</span>
                           {daysSinceNote != null && (
@@ -1128,27 +1234,60 @@ export default function PaymentTracking() {
                     {isNotesExpanded && (
                       <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 px-4 py-3">
                         {canEdit && (
-                          <div className="flex gap-2 mb-3">
-                            <input
-                              type="text"
-                              value={noteInputs[spa.id] || ''}
-                              onChange={(e) => setNoteInputs(prev => ({ ...prev, [spa.id]: e.target.value }))}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(spa.id); }}
-                              placeholder="Add a note..."
-                              className="input-field text-xs py-1.5 flex-1"
-                            />
-                            <button
-                              onClick={() => handleAddNote(spa.id)}
-                              disabled={!(noteInputs[spa.id] || '').trim() || saving === `note-${spa.id}`}
-                              className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 transition-colors flex items-center gap-1"
-                            >
-                              {saving === `note-${spa.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                            </button>
+                          <div className="mb-3">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={noteInputs[spa.id] || ''}
+                                onChange={(e) => setNoteInputs(prev => ({ ...prev, [spa.id]: e.target.value }))}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(spa.id, noteType); }}
+                                placeholder={noteType === 'critical' ? '🚨 Add critical note...' : 'Add a note...'}
+                                className={`input-field text-xs py-1.5 flex-1 ${noteType === 'critical' ? 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10' : ''}`}
+                              />
+                              <button
+                                onClick={() => setNoteType(prev => prev === 'critical' ? 'regular' : 'critical')}
+                                className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors flex-shrink-0 ${
+                                  noteType === 'critical'
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                    : 'bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:bg-gray-700 dark:hover:bg-red-900/20'
+                                }`}
+                                title={noteType === 'critical' ? 'Switch to regular note' : 'Mark as critical'}
+                              >
+                                🚨
+                              </button>
+                              <button
+                                onClick={() => handleAddNote(spa.id, noteType)}
+                                disabled={!(noteInputs[spa.id] || '').trim() || saving === `note-${spa.id}`}
+                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 transition-colors flex items-center gap-1"
+                              >
+                                {saving === `note-${spa.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                              </button>
+                            </div>
                           </div>
                         )}
                         {spaNotes.length > 0 ? (
                           <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                            {spaNotes.map(n => {
+                            {/* Critical notes first */}
+                            {spaNotes.filter(n => n.note_type === 'critical').length > 0 && (
+                              <div className="space-y-2 mb-2">
+                                {spaNotes.filter(n => n.note_type === 'critical').map(n => {
+                                  const author = (allUsers || []).find(u => u.id === n.created_by)?.name || 'Unknown';
+                                  return (
+                                    <div key={n.id} className="flex gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-2">
+                                      <span className="flex-shrink-0 mt-0.5">🚨</span>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-red-800 dark:text-red-300 font-medium">{n.note}</p>
+                                        <p className="text-[10px] text-red-400 mt-0.5">
+                                          {author} · {format(new Date(n.created_at), 'MMM d, h:mm a')}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {/* Regular notes */}
+                            {spaNotes.filter(n => n.note_type !== 'critical').map(n => {
                               const author = (allUsers || []).find(u => u.id === n.created_by)?.name || 'Unknown';
                               return (
                                 <div key={n.id} className="flex gap-2 text-xs">
@@ -1201,6 +1340,15 @@ export default function PaymentTracking() {
                   placeholder="0.00"
                   className="input-field text-sm py-2 w-full"
                   autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 uppercase tracking-wide mb-1">Effective Date <span className="normal-case font-normal">(leave empty for today)</span></label>
+                <input
+                  type="date"
+                  value={adjDate}
+                  onChange={(e) => setAdjDate(e.target.value)}
+                  className="input-field text-xs py-1.5 w-full"
                 />
               </div>
               <div>
