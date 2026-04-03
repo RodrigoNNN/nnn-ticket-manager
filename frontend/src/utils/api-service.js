@@ -655,6 +655,14 @@ export async function deleteMonthAdjustment(adjustmentId) {
   if (error) throw error;
 }
 
+export async function deletePaymentTracking(recordId) {
+  const { error } = await supabase
+    .from('spa_payment_tracking')
+    .delete()
+    .eq('id', recordId);
+  if (error) throw error;
+}
+
 // ─── Promo Snapshots (for revert logic) ───
 
 async function createPromoSnapshot(ticketId, promo) {

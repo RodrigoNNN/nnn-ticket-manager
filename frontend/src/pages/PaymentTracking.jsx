@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { fetchSpas, updateSpa, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth, fetchAllMonthAdjustments, fetchAppliedCreditsForMonth, createMonthAdjustment, updateAdjustmentStatus, deleteMonthAdjustment } from '../utils/api-service';
+import { fetchSpas, updateSpa, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth, fetchAllMonthAdjustments, fetchAppliedCreditsForMonth, createMonthAdjustment, updateAdjustmentStatus, deleteMonthAdjustment, deletePaymentTracking } from '../utils/api-service';
 import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard, Settings2, PlusCircle, MinusCircle, Wallet, ArrowRight, Undo2, Trash2, Search, Filter } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -523,7 +523,21 @@ export default function PaymentTracking() {
 
   // ─── Period row renderer ───
 
-  const renderPeriodRow = (spa, pd, spaPayments, isOnly) => {
+  const handleRemoveExtraPeriod = async (spaId, periodNum) => {
+    setExtraPeriods(prev => {
+      const existing = prev[spaId] || [];
+      return { ...prev, [spaId]: existing.filter(n => n !== periodNum) };
+    });
+    const p = payments[spaId]?.[periodNum];
+    if (p?.id) {
+      try {
+        await deletePaymentTracking(p.id);
+        await loadData(true);
+      } catch { /* ignore */ }
+    }
+  };
+
+  const renderPeriodRow = (spa, pd, spaPayments, isOnly, isExtra = false) => {
     const p = spaPayments[pd.period] || {};
     const deadline = p.deadline || pd.deadline;
     const overdue = p.status !== 'paid' && isOverdue(deadline);
@@ -535,8 +549,17 @@ export default function PaymentTracking() {
       <div key={pd.period} className={`flex items-center gap-3 flex-wrap py-2 ${!isOnly ? 'border-t border-gray-100 dark:border-gray-700/50 first:border-0' : ''}`}>
         {/* Period label */}
         {!isOnly && (
-          <div className="min-w-[70px]">
+          <div className="min-w-[70px] flex items-center gap-1">
             <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase">{pd.label}</span>
+            {isExtra && canEdit && (
+              <button
+                onClick={() => handleRemoveExtraPeriod(spa.id, pd.period)}
+                className="text-gray-300 hover:text-red-500 dark:text-gray-600 dark:hover:text-red-400 transition-colors"
+                title="Remove extra row"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
           </div>
         )}
 
@@ -1173,7 +1196,7 @@ export default function PaymentTracking() {
                         <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
                           {(extraPeriods[spa.id] || []).map(epNum => {
                             const epDef = { period: epNum, label: `Extra #${epNum - 1}`, deadline: format(new Date(month.split('-')[0], month.split('-')[1] - 1, getDaysInMonth(new Date(month.split('-')[0], month.split('-')[1] - 1))), 'yyyy-MM-dd'), amountDue: 0 };
-                            return renderPeriodRow(spa, epDef, spaPayments, false);
+                            return renderPeriodRow(spa, epDef, spaPayments, false, true);
                           })}
                           {canEdit && (
                             <button
@@ -1197,7 +1220,7 @@ export default function PaymentTracking() {
                           {/* Extra periods */}
                           {(extraPeriods[spa.id] || []).map(epNum => {
                             const epDef = { period: epNum, label: `Extra #${epNum - periodCount}`, deadline: format(new Date(month.split('-')[0], month.split('-')[1] - 1, getDaysInMonth(new Date(month.split('-')[0], month.split('-')[1] - 1))), 'yyyy-MM-dd'), amountDue: 0 };
-                            return renderPeriodRow(spa, epDef, spaPayments, false);
+                            return renderPeriodRow(spa, epDef, spaPayments, false, true);
                           })}
                           {/* Add extra period button */}
                           {canEdit && (
