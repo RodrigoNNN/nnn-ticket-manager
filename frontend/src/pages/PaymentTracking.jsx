@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { fetchSpas, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth } from '../utils/api-service';
-import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard } from 'lucide-react';
+import { fetchSpas, updateSpa, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth } from '../utils/api-service';
+import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard, Settings2 } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -15,12 +15,46 @@ function fmtUSD(val) {
   return num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-function getDeadline(paymentSchedule, month) {
+// Returns { count, periods: [{ period, label, deadline, amountDue }] }
+function getPeriods(paymentSchedule, month, budget) {
   const [y, m] = month.split('-').map(Number);
   const totalDays = getDaysInMonth(new Date(y, m - 1));
-  if (paymentSchedule === 'weekly') return format(new Date(y, m - 1, 7), 'yyyy-MM-dd');
-  if (paymentSchedule === 'biweekly') return format(new Date(y, m - 1, 15), 'yyyy-MM-dd');
-  return format(new Date(y, m - 1, totalDays), 'yyyy-MM-dd');
+  const schedule = paymentSchedule || 'monthly';
+
+  if (schedule === 'weekly') {
+    // 4 weekly periods
+    const count = 4;
+    const perPeriod = budget / count;
+    return {
+      count,
+      periods: [
+        { period: 1, label: 'Week 1', deadline: format(new Date(y, m - 1, 7), 'yyyy-MM-dd'), amountDue: perPeriod },
+        { period: 2, label: 'Week 2', deadline: format(new Date(y, m - 1, 14), 'yyyy-MM-dd'), amountDue: perPeriod },
+        { period: 3, label: 'Week 3', deadline: format(new Date(y, m - 1, 21), 'yyyy-MM-dd'), amountDue: perPeriod },
+        { period: 4, label: 'Week 4', deadline: format(new Date(y, m - 1, totalDays), 'yyyy-MM-dd'), amountDue: perPeriod },
+      ],
+    };
+  }
+
+  if (schedule === 'biweekly') {
+    const count = 2;
+    const perPeriod = budget / count;
+    return {
+      count,
+      periods: [
+        { period: 1, label: '1st Half', deadline: format(new Date(y, m - 1, 15), 'yyyy-MM-dd'), amountDue: perPeriod },
+        { period: 2, label: '2nd Half', deadline: format(new Date(y, m - 1, totalDays), 'yyyy-MM-dd'), amountDue: perPeriod },
+      ],
+    };
+  }
+
+  // monthly
+  return {
+    count: 1,
+    periods: [
+      { period: 1, label: 'Full Month', deadline: format(new Date(y, m - 1, totalDays), 'yyyy-MM-dd'), amountDue: budget },
+    ],
+  };
 }
 
 function isOverdue(deadline) {
@@ -34,17 +68,22 @@ const STATUS_CONFIG = {
   overdue: { label: 'Overdue', icon: AlertTriangle, bg: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', rowBg: 'bg-red-50/30 dark:bg-red-900/5' },
 };
 
+const PAYMENT_TYPE_LABELS = { credit_card: 'Credit Card', invoice: 'Invoice' };
+const SCHEDULE_LABELS = { weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly' };
+
 export default function PaymentTracking() {
   const { user, isAdmin, isViewingAsOther, allUsers } = useAuth();
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [spas, setSpas] = useState([]);
-  const [payments, setPayments] = useState({});
+  const [payments, setPayments] = useState({});       // { spaId: { period: paymentRecord } }
   const [runningBalances, setRunningBalances] = useState({});
   const [notes, setNotes] = useState({});
   const [expandedNotes, setExpandedNotes] = useState({});
+  const [expandedSpas, setExpandedSpas] = useState({}); // for multi-period accordion
   const [noteInputs, setNoteInputs] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
+  const [editingSettings, setEditingSettings] = useState(null); // spaId being edited
 
   const effectiveAdmin = isAdmin && !isViewingAsOther;
   const canEdit = effectiveAdmin || user?.department === 'Accounting';
@@ -61,12 +100,15 @@ export default function PaymentTracking() {
       allSpas.sort((a, b) => a.name.localeCompare(b.name));
       setSpas(allSpas);
 
-      // Build payments map
+      // Build payments map: { spaId: { periodNum: record } }
       const payMap = {};
-      for (const p of allPayments) payMap[p.spa_id] = p;
+      for (const p of allPayments) {
+        if (!payMap[p.spa_id]) payMap[p.spa_id] = {};
+        payMap[p.spa_id][p.period || 1] = p;
+      }
       setPayments(payMap);
 
-      // Running balances (same logic as BudgetReport)
+      // Running balances
       const spendByMonth = {};
       for (const r of historicalReports) {
         if (!spendByMonth[r.spa_id]) spendByMonth[r.spa_id] = {};
@@ -84,7 +126,7 @@ export default function PaymentTracking() {
       }
       setRunningBalances(balances);
 
-      // Load notes for all spas
+      // Load notes
       const notesMap = {};
       for (const spa of allSpas) {
         try {
@@ -101,13 +143,15 @@ export default function PaymentTracking() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleStatusChange = async (spaId, newStatus) => {
-    setSaving(`status-${spaId}`);
+  // ─── Handlers ───
+
+  const handleStatusChange = async (spaId, period, newStatus) => {
+    setSaving(`status-${spaId}-${period}`);
     try {
       const fields = { status: newStatus };
       if (newStatus === 'paid') fields.paid_at = new Date().toISOString();
       else fields.paid_at = null;
-      await upsertPaymentTracking(spaId, month, fields, user.id);
+      await upsertPaymentTracking(spaId, month, fields, user.id, period);
       toast.success(`Marked as ${newStatus}`);
       await loadData();
     } catch (err) {
@@ -117,10 +161,10 @@ export default function PaymentTracking() {
     }
   };
 
-  const handleDeadlineChange = async (spaId, deadline) => {
-    setSaving(`deadline-${spaId}`);
+  const handleDeadlineChange = async (spaId, period, deadline) => {
+    setSaving(`deadline-${spaId}-${period}`);
     try {
-      await upsertPaymentTracking(spaId, month, { deadline }, user.id);
+      await upsertPaymentTracking(spaId, month, { deadline }, user.id, period);
       toast.success('Deadline updated');
       await loadData();
     } catch (err) {
@@ -130,12 +174,12 @@ export default function PaymentTracking() {
     }
   };
 
-  const handleAmountPaid = async (spaId, value) => {
+  const handleAmountPaid = async (spaId, period, value) => {
     const num = parseFloat(String(value).replace(/[^0-9.\-]/g, '')) || 0;
     if (num <= 0) return;
-    setSaving(`amount-${spaId}`);
+    setSaving(`amount-${spaId}-${period}`);
     try {
-      await upsertPaymentTracking(spaId, month, { amount_paid: num }, user.id);
+      await upsertPaymentTracking(spaId, month, { amount_paid: num }, user.id, period);
       toast.success('Amount saved');
       await loadData();
     } catch (err) {
@@ -162,24 +206,159 @@ export default function PaymentTracking() {
     }
   };
 
+  const handlePaymentTypeChange = async (spaId, newType) => {
+    setSaving(`type-${spaId}`);
+    try {
+      await updateSpa(spaId, { payment_type: newType });
+      toast.success(`Changed to ${PAYMENT_TYPE_LABELS[newType]}`);
+      setEditingSettings(null);
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to update payment type');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleScheduleChange = async (spaId, newSchedule) => {
+    setSaving(`schedule-${spaId}`);
+    try {
+      await updateSpa(spaId, { payment_schedule: newSchedule });
+      toast.success(`Changed to ${SCHEDULE_LABELS[newSchedule]}`);
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to update schedule');
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const prevMonth = () => setMonth(format(subMonths(monthToDate(month), 1), 'yyyy-MM'));
   const nextMonth = () => setMonth(format(addMonths(monthToDate(month), 1), 'yyyy-MM'));
 
   const toggleNotes = (spaId) => setExpandedNotes(prev => ({ ...prev, [spaId]: !prev[spaId] }));
+  const toggleSpa = (spaId) => setExpandedSpas(prev => ({ ...prev, [spaId]: !prev[spaId] }));
 
-  // Separate spas by payment type
+  // ─── Derived data ───
+
   const trackableSpas = spas.filter(s => (s.payment_type || 'invoice') !== 'credit_card');
   const creditCardSpas = spas.filter(s => (s.payment_type || 'invoice') === 'credit_card');
 
-  // Stats (only count trackable spas)
-  const paidCount = trackableSpas.filter(s => payments[s.id]?.status === 'paid').length;
-  const overdueCount = trackableSpas.filter(s => {
-    const p = payments[s.id];
-    if (p?.status === 'paid') return false;
-    const dl = p?.deadline || getDeadline(s.payment_schedule, month);
-    return isOverdue(dl);
-  }).length;
-  const pendingCount = trackableSpas.length - paidCount - overdueCount;
+  // Stats: count individual periods across all trackable spas
+  let totalPaidPeriods = 0, totalOverduePeriods = 0, totalPendingPeriods = 0;
+  for (const spa of trackableSpas) {
+    const budget = spa.monthly_budget || 0;
+    const { periods } = getPeriods(spa.payment_schedule, month, budget);
+    const spaPayments = payments[spa.id] || {};
+    for (const pd of periods) {
+      const p = spaPayments[pd.period] || {};
+      const dl = p.deadline || pd.deadline;
+      if (p.status === 'paid') totalPaidPeriods++;
+      else if (isOverdue(dl)) totalOverduePeriods++;
+      else totalPendingPeriods++;
+    }
+  }
+
+  // ─── Period row renderer ───
+
+  const renderPeriodRow = (spa, pd, spaPayments, isOnly) => {
+    const p = spaPayments[pd.period] || {};
+    const deadline = p.deadline || pd.deadline;
+    const overdue = p.status !== 'paid' && isOverdue(deadline);
+    const status = p.status === 'paid' ? 'paid' : overdue ? 'overdue' : 'pending';
+    const statusCfg = STATUS_CONFIG[status];
+    const StatusIcon = statusCfg.icon;
+
+    return (
+      <div key={pd.period} className={`flex items-center gap-3 flex-wrap py-2 ${!isOnly ? 'border-t border-gray-100 dark:border-gray-700/50 first:border-0' : ''}`}>
+        {/* Period label */}
+        {!isOnly && (
+          <div className="min-w-[70px]">
+            <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase">{pd.label}</span>
+          </div>
+        )}
+
+        {/* Amount due for this period */}
+        <div className="text-center min-w-[80px]">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Due</p>
+          <p className="text-sm font-bold text-gray-900 dark:text-white">{pd.amountDue > 0 ? fmtUSD(pd.amountDue) : '—'}</p>
+        </div>
+
+        {/* Amount paid */}
+        <div className="text-center min-w-[100px]">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Paid</p>
+          {canEdit ? (
+            <input
+              type="text"
+              inputMode="decimal"
+              defaultValue={p.amount_paid > 0 ? p.amount_paid.toLocaleString('en-US', { minimumFractionDigits: 2 }) : ''}
+              onBlur={(e) => {
+                const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
+                if (num > 0) {
+                  e.target.value = num.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                  handleAmountPaid(spa.id, pd.period, num);
+                }
+              }}
+              placeholder="0.00"
+              className="input-field text-xs py-1 text-center w-24 mt-0.5"
+            />
+          ) : (
+            <p className="text-sm font-bold text-gray-900 dark:text-white">
+              {(p.amount_paid || 0) > 0 ? fmtUSD(p.amount_paid) : '—'}
+            </p>
+          )}
+        </div>
+
+        {/* Deadline */}
+        <div className="text-center min-w-[110px]">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Deadline</p>
+          {canEdit ? (
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => handleDeadlineChange(spa.id, pd.period, e.target.value)}
+              className={`input-field text-xs py-1 text-center w-[120px] mt-0.5 ${overdue ? 'border-red-300 dark:border-red-600' : ''}`}
+            />
+          ) : (
+            <p className={`text-sm font-medium ${overdue ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>
+              {format(new Date(deadline + 'T12:00:00'), 'MMM d')}
+            </p>
+          )}
+        </div>
+
+        {/* Status */}
+        <div className="text-center min-w-[110px]">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
+          {canEdit ? (
+            <div className="flex gap-1 mt-0.5">
+              {['pending', 'paid', 'overdue'].map(s => {
+                const cfg = STATUS_CONFIG[s];
+                const isActive = status === s;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => handleStatusChange(spa.id, pd.period, s)}
+                    disabled={saving === `status-${spa.id}-${pd.period}`}
+                    className={`text-[10px] px-2 py-1 rounded-full font-medium transition-colors ${
+                      isActive ? cfg.bg : 'bg-gray-50 text-gray-400 dark:bg-gray-700/50 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${statusCfg.bg}`}>
+              <StatusIcon className="w-3 h-3" /> {statusCfg.label}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ─── Render ───
 
   return (
     <div>
@@ -199,19 +378,19 @@ export default function PaymentTracking() {
         </div>
       </div>
 
-      {/* Stats bar */}
+      {/* Stats bar — counts individual payment periods */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="card p-4 text-center">
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Paid</p>
-          <p className="text-2xl font-bold text-green-600">{paidCount}</p>
+          <p className="text-2xl font-bold text-green-600">{totalPaidPeriods}</p>
         </div>
         <div className="card p-4 text-center">
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Pending</p>
-          <p className="text-2xl font-bold text-yellow-600">{pendingCount}</p>
+          <p className="text-2xl font-bold text-yellow-600">{totalPendingPeriods}</p>
         </div>
         <div className="card p-4 text-center">
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Overdue</p>
-          <p className="text-2xl font-bold text-red-600">{overdueCount}</p>
+          <p className="text-2xl font-bold text-red-600">{totalOverduePeriods}</p>
         </div>
       </div>
 
@@ -225,7 +404,7 @@ export default function PaymentTracking() {
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Credit Card clients — simplified section */}
+          {/* ─── Credit Card clients — simplified ─── */}
           {creditCardSpas.length > 0 && (
             <>
               <div className="flex items-center gap-2 mt-2 mb-1">
@@ -239,6 +418,7 @@ export default function PaymentTracking() {
                 const totalDays = getDaysInMonth(new Date(y, m - 1));
                 const dailyPace = totalDays > 0 ? budget / totalDays : 0;
                 const balance = runningBalances[spa.id] || 0;
+                const isSettingsOpen = editingSettings === spa.id;
 
                 return (
                   <div key={spa.id} className="card overflow-hidden bg-gray-50/50 dark:bg-gray-800/30">
@@ -250,6 +430,11 @@ export default function PaymentTracking() {
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                               Credit Card
                             </span>
+                            {canEdit && (
+                              <button onClick={() => setEditingSettings(isSettingsOpen ? null : spa.id)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                <Settings2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                           {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
                         </div>
@@ -270,6 +455,22 @@ export default function PaymentTracking() {
                           </p>
                         </div>
                       </div>
+
+                      {/* Inline settings editor */}
+                      {isSettingsOpen && canEdit && (
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-3">
+                          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Payment Type:</span>
+                          <select
+                            value={spa.payment_type || 'credit_card'}
+                            onChange={(e) => handlePaymentTypeChange(spa.id, e.target.value)}
+                            disabled={saving === `type-${spa.id}`}
+                            className="input-field text-xs py-1 w-auto"
+                          >
+                            <option value="credit_card">Credit Card</option>
+                            <option value="invoice">Invoice</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -277,7 +478,7 @@ export default function PaymentTracking() {
             </>
           )}
 
-          {/* Invoice / Our Credit Card clients — full tracking */}
+          {/* ─── Invoice clients — full tracking with periods ─── */}
           {trackableSpas.length > 0 && (
             <>
               {creditCardSpas.length > 0 && (
@@ -289,26 +490,37 @@ export default function PaymentTracking() {
               )}
               {trackableSpas.map(spa => {
                 const budget = spa.monthly_budget || 0;
-                const p = payments[spa.id] || {};
-                const defaultDeadline = getDeadline(spa.payment_schedule, month);
-                const deadline = p.deadline || defaultDeadline;
-                const overdue = p.status !== 'paid' && isOverdue(deadline);
-                const status = p.status === 'paid' ? 'paid' : overdue ? 'overdue' : 'pending';
-                const statusCfg = STATUS_CONFIG[status];
-                const StatusIcon = statusCfg.icon;
+                const { periods, count: periodCount } = getPeriods(spa.payment_schedule, month, budget);
+                const spaPayments = payments[spa.id] || {};
                 const balance = runningBalances[spa.id] || 0;
                 const spaNotes = notes[spa.id] || [];
-                const isExpanded = expandedNotes[spa.id];
+                const isNotesExpanded = expandedNotes[spa.id];
+                const isSpaExpanded = expandedSpas[spa.id] !== false; // default open
                 const latestNote = spaNotes[0];
                 const daysSinceNote = latestNote ? Math.floor((Date.now() - new Date(latestNote.created_at).getTime()) / 86400000) : null;
                 const noteAuthor = latestNote ? (allUsers || []).find(u => u.id === latestNote.created_by)?.name : null;
+                const isSettingsOpen = editingSettings === spa.id;
+
+                // Overall status for card color: worst across all periods
+                const periodStatuses = periods.map(pd => {
+                  const p = spaPayments[pd.period] || {};
+                  const dl = p.deadline || pd.deadline;
+                  if (p.status === 'paid') return 'paid';
+                  if (isOverdue(dl)) return 'overdue';
+                  return 'pending';
+                });
+                const worstStatus = periodStatuses.includes('overdue') ? 'overdue' : periodStatuses.includes('pending') ? 'pending' : 'paid';
+                const cardBg = STATUS_CONFIG[worstStatus].rowBg;
+
+                // Summary: paid count / total
+                const paidPeriodCount = periodStatuses.filter(s => s === 'paid').length;
 
                 return (
-                  <div key={spa.id} className={`card overflow-hidden ${statusCfg.rowBg}`}>
-                    {/* Main row */}
+                  <div key={spa.id} className={`card overflow-hidden ${cardBg}`}>
+                    {/* Header row */}
                     <div className="p-4">
                       <div className="flex items-start gap-4 flex-wrap">
-                        {/* Client info */}
+                        {/* Client info + badges */}
                         <div className="min-w-[180px] flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold text-gray-900 dark:text-white">{spa.name}</span>
@@ -322,13 +534,23 @@ export default function PaymentTracking() {
                             }`}>
                               {spa.payment_schedule || 'monthly'}
                             </span>
+                            {periodCount > 1 && (
+                              <span className="text-[10px] text-gray-400">
+                                {paidPeriodCount}/{periodCount} paid
+                              </span>
+                            )}
+                            {canEdit && (
+                              <button onClick={() => setEditingSettings(isSettingsOpen ? null : spa.id)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                <Settings2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                           {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
                         </div>
 
-                        {/* Amount due */}
+                        {/* Monthly total */}
                         <div className="text-center min-w-[80px]">
-                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Due</p>
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Monthly</p>
                           <p className="text-sm font-bold text-gray-900 dark:text-white">{budget > 0 ? fmtUSD(budget) : '—'}</p>
                         </div>
 
@@ -342,94 +564,134 @@ export default function PaymentTracking() {
                           </p>
                         </div>
 
-                        {/* Amount paid */}
-                        <div className="text-center min-w-[100px]">
-                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Paid</p>
-                          {canEdit ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              defaultValue={p.amount_paid > 0 ? p.amount_paid.toLocaleString('en-US', { minimumFractionDigits: 2 }) : ''}
-                              onBlur={(e) => {
-                                const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
-                                if (num > 0) {
-                                  e.target.value = num.toLocaleString('en-US', { minimumFractionDigits: 2 });
-                                  handleAmountPaid(spa.id, num);
-                                }
-                              }}
-                              placeholder="0.00"
-                              className="input-field text-xs py-1 text-center w-24 mt-0.5"
-                            />
-                          ) : (
-                            <p className="text-sm font-bold text-gray-900 dark:text-white">
-                              {(p.amount_paid || 0) > 0 ? fmtUSD(p.amount_paid) : '—'}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Deadline */}
-                        <div className="text-center min-w-[110px]">
-                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Deadline</p>
-                          {canEdit ? (
-                            <input
-                              type="date"
-                              value={deadline}
-                              onChange={(e) => handleDeadlineChange(spa.id, e.target.value)}
-                              className={`input-field text-xs py-1 text-center w-[120px] mt-0.5 ${overdue ? 'border-red-300 dark:border-red-600' : ''}`}
-                            />
-                          ) : (
-                            <p className={`text-sm font-medium ${overdue ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>
-                              {format(new Date(deadline + 'T12:00:00'), 'MMM d')}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Status */}
-                        <div className="text-center min-w-[110px]">
-                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
-                          {canEdit ? (
-                            <div className="flex gap-1 mt-0.5">
-                              {['pending', 'paid', 'overdue'].map(s => {
-                                const cfg = STATUS_CONFIG[s];
-                                const isActive = status === s;
-                                return (
-                                  <button
-                                    key={s}
-                                    onClick={() => handleStatusChange(spa.id, s)}
-                                    disabled={saving === `status-${spa.id}`}
-                                    className={`text-[10px] px-2 py-1 rounded-full font-medium transition-colors ${
-                                      isActive ? cfg.bg : 'bg-gray-50 text-gray-400 dark:bg-gray-700/50 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                    }`}
-                                  >
-                                    {cfg.label}
-                                  </button>
-                                );
-                              })}
+                        {/* Single period: render inline */}
+                        {periodCount === 1 && (
+                          <>
+                            {/* Amount paid */}
+                            <div className="text-center min-w-[100px]">
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Paid</p>
+                              {canEdit ? (
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  defaultValue={(spaPayments[1]?.amount_paid || 0) > 0 ? spaPayments[1].amount_paid.toLocaleString('en-US', { minimumFractionDigits: 2 }) : ''}
+                                  onBlur={(e) => {
+                                    const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
+                                    if (num > 0) {
+                                      e.target.value = num.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                      handleAmountPaid(spa.id, 1, num);
+                                    }
+                                  }}
+                                  placeholder="0.00"
+                                  className="input-field text-xs py-1 text-center w-24 mt-0.5"
+                                />
+                              ) : (
+                                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {(spaPayments[1]?.amount_paid || 0) > 0 ? fmtUSD(spaPayments[1].amount_paid) : '—'}
+                                </p>
+                              )}
                             </div>
-                          ) : (
-                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${statusCfg.bg}`}>
-                              <StatusIcon className="w-3 h-3" /> {statusCfg.label}
-                            </span>
-                          )}
-                        </div>
+
+                            {/* Deadline */}
+                            <div className="text-center min-w-[110px]">
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Deadline</p>
+                              {(() => {
+                                const p1 = spaPayments[1] || {};
+                                const dl = p1.deadline || periods[0].deadline;
+                                const ov = p1.status !== 'paid' && isOverdue(dl);
+                                return canEdit ? (
+                                  <input type="date" value={dl} onChange={(e) => handleDeadlineChange(spa.id, 1, e.target.value)} className={`input-field text-xs py-1 text-center w-[120px] mt-0.5 ${ov ? 'border-red-300 dark:border-red-600' : ''}`} />
+                                ) : (
+                                  <p className={`text-sm font-medium ${ov ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>{format(new Date(dl + 'T12:00:00'), 'MMM d')}</p>
+                                );
+                              })()}
+                            </div>
+
+                            {/* Status */}
+                            <div className="text-center min-w-[110px]">
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
+                              {(() => {
+                                const p1 = spaPayments[1] || {};
+                                const dl = p1.deadline || periods[0].deadline;
+                                const ov = p1.status !== 'paid' && isOverdue(dl);
+                                const st = p1.status === 'paid' ? 'paid' : ov ? 'overdue' : 'pending';
+                                const stCfg = STATUS_CONFIG[st];
+                                const StIcon = stCfg.icon;
+                                return canEdit ? (
+                                  <div className="flex gap-1 mt-0.5">
+                                    {['pending', 'paid', 'overdue'].map(s => {
+                                      const cfg = STATUS_CONFIG[s];
+                                      return (
+                                        <button key={s} onClick={() => handleStatusChange(spa.id, 1, s)} disabled={saving === `status-${spa.id}-1`}
+                                          className={`text-[10px] px-2 py-1 rounded-full font-medium transition-colors ${st === s ? cfg.bg : 'bg-gray-50 text-gray-400 dark:bg-gray-700/50 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                                          {cfg.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${stCfg.bg}`}>
+                                    <StIcon className="w-3 h-3" /> {stCfg.label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          </>
+                        )}
+
+                        {/* Multi-period: toggle to expand */}
+                        {periodCount > 1 && (
+                          <button onClick={() => toggleSpa(spa.id)} className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors mt-1">
+                            {periodCount} payments
+                            {isSpaExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        )}
 
                         {/* Notes toggle */}
                         <button
                           onClick={() => toggleNotes(spa.id)}
-                          className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg transition-colors mt-3 ${
-                            isExpanded ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                          className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg transition-colors mt-1 ${
+                            isNotesExpanded ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
                             spaNotes.length > 0 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' :
                             'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                           }`}
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
                           {spaNotes.length > 0 ? spaNotes.length : ''}
-                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          {isNotesExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                         </button>
                       </div>
 
-                      {/* Latest note preview (when collapsed) */}
-                      {!isExpanded && latestNote && (
+                      {/* Settings editor (inline) */}
+                      {isSettingsOpen && canEdit && (
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-4 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide">Type:</span>
+                            <select value={spa.payment_type || 'invoice'} onChange={(e) => handlePaymentTypeChange(spa.id, e.target.value)} disabled={saving === `type-${spa.id}`} className="input-field text-xs py-1 w-auto">
+                              <option value="credit_card">Credit Card</option>
+                              <option value="invoice">Invoice</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide">Schedule:</span>
+                            <select value={spa.payment_schedule || 'monthly'} onChange={(e) => handleScheduleChange(spa.id, e.target.value)} disabled={saving === `schedule-${spa.id}`} className="input-field text-xs py-1 w-auto">
+                              <option value="weekly">Weekly (4 payments)</option>
+                              <option value="biweekly">Biweekly (2 payments)</option>
+                              <option value="monthly">Monthly (1 payment)</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Multi-period rows */}
+                      {periodCount > 1 && isSpaExpanded && (
+                        <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                          {periods.map(pd => renderPeriodRow(spa, pd, spaPayments, false))}
+                        </div>
+                      )}
+
+                      {/* Latest note preview (collapsed) */}
+                      {!isNotesExpanded && latestNote && (
                         <div className="mt-2 pl-1 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                           <span className="truncate max-w-[400px]">{latestNote.note}</span>
                           <span className="flex-shrink-0">— {noteAuthor || 'Unknown'}</span>
@@ -443,9 +705,8 @@ export default function PaymentTracking() {
                     </div>
 
                     {/* Expanded notes section */}
-                    {isExpanded && (
+                    {isNotesExpanded && (
                       <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 px-4 py-3">
-                        {/* Add note input */}
                         {canEdit && (
                           <div className="flex gap-2 mb-3">
                             <input
@@ -465,8 +726,6 @@ export default function PaymentTracking() {
                             </button>
                           </div>
                         )}
-
-                        {/* Notes timeline */}
                         {spaNotes.length > 0 ? (
                           <div className="space-y-2 max-h-[200px] overflow-y-auto">
                             {spaNotes.map(n => {

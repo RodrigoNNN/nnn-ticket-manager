@@ -539,17 +539,18 @@ export async function fetchAllPaymentTracking(month) {
   return data || [];
 }
 
-export async function upsertPaymentTracking(spaId, month, fields, userId) {
+export async function upsertPaymentTracking(spaId, month, fields, userId, period = 1) {
   const { data, error } = await supabase
     .from('spa_payment_tracking')
     .upsert({
-      id: `pt-${spaId}-${month}`,
+      id: `pt-${spaId}-${month}-${period}`,
       spa_id: spaId,
       month,
+      period,
       ...fields,
       updated_by: userId,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'spa_id,month' })
+    }, { onConflict: 'spa_id,month,period' })
     .select();
   if (error) throw error;
   return data?.[0];
