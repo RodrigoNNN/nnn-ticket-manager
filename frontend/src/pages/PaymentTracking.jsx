@@ -407,7 +407,9 @@ export default function PaymentTracking() {
     if (filterStatus !== 'all') {
       if (type === 'credit_card') return false; // CC spas don't have status
       const worst = getSpaWorstStatus(spa);
-      if (filterStatus !== worst) return false;
+      if (filterStatus === 'not_paid') {
+        if (worst === 'paid') return false;
+      } else if (filterStatus !== worst) return false;
     }
     return true;
   };
@@ -579,8 +581,9 @@ export default function PaymentTracking() {
       </div>
 
       {/* Stats bar — clickable as quick status filters */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4">
         {[
+          { key: 'not_paid', label: 'Not Paid', count: totalPendingPeriods + totalOverduePeriods, color: 'text-orange-600', ring: 'ring-orange-400' },
           { key: 'paid', label: 'Paid', count: totalPaidPeriods, color: 'text-green-600', ring: 'ring-green-400' },
           { key: 'pending', label: 'Pending', count: totalPendingPeriods, color: 'text-yellow-600', ring: 'ring-yellow-400' },
           { key: 'overdue', label: 'Overdue', count: totalOverduePeriods, color: 'text-red-600', ring: 'ring-red-400' },
