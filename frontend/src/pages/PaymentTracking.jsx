@@ -62,6 +62,30 @@ function isOverdue(deadline) {
   return new Date(deadline + 'T23:59:59') < new Date();
 }
 
+// Check if a period is currently due (we've entered its time window)
+// Past months: all periods due. Future months: none due. Current month: based on date.
+function isPeriodDue(month, period, periodCount) {
+  const today = new Date();
+  const [y, m] = month.split('-').map(Number);
+  const monthStart = new Date(y, m - 1, 1);
+  const monthEnd = new Date(y, m, 0); // last day of month
+
+  // Past month → all periods are due
+  if (today > monthEnd) return true;
+  // Future month → no periods due yet
+  if (today < monthStart) return false;
+
+  // Current month → check if we've entered this period's window
+  const day = today.getDate();
+  if (periodCount === 4) { // weekly: starts on 1st, 8th, 15th, 22nd
+    return day >= [1, 8, 15, 22][period - 1];
+  }
+  if (periodCount === 2) { // biweekly: starts on 1st, 16th
+    return day >= [1, 16][period - 1];
+  }
+  return true; // monthly — always due
+}
+
 const STATUS_CONFIG = {
   paid: { label: 'Paid', icon: CheckCircle, bg: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', rowBg: 'bg-green-50/30 dark:bg-green-900/5' },
   pending: { label: 'Pending', icon: Clock, bg: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', rowBg: '' },
@@ -372,23 +396,26 @@ export default function PaymentTracking() {
 
   // ─── Derived data ───
 
-  // Get worst status for a spa across all its periods
+  // Get worst status for a spa across only DUE periods (skip future ones)
   const getSpaWorstStatus = (spa) => {
     const effBudget = getEffectiveBudget(spa.id, spa.monthly_budget || 0);
-    const { periods } = getPeriods(spa.payment_schedule, month, effBudget);
+    const { count: periodCount, periods } = getPeriods(spa.payment_schedule, month, effBudget);
     const spaPayments = payments[spa.id] || {};
-    let hasOverdue = false, hasPending = false;
+    let hasOverdue = false, hasPending = false, hasDue = false;
     for (const pd of periods) {
+      // Skip periods we haven't entered yet
+      if (!isPeriodDue(month, pd.period, periodCount)) continue;
+      hasDue = true;
       const p = spaPayments[pd.period] || {};
       const dl = p.deadline || pd.deadline;
       const amtDue = parseFloat(p.amount_due || pd.amountDue) || 0;
       const amtPaid = parseFloat(p.amount_paid) || 0;
-      // Consider paid if status is 'paid' OR if amount_paid covers amount_due
-      const isPaid = p.status === 'paid' || (amtDue > 0 && amtPaid >= amtDue);
-      if (isPaid) continue;
+      const paid = p.status === 'paid' || (amtDue > 0 && amtPaid >= amtDue);
+      if (paid) continue;
       if (isOverdue(dl)) hasOverdue = true;
       else hasPending = true;
     }
+    if (!hasDue) return 'pending'; // future month, nothing due yet
     if (hasOverdue) return 'overdue';
     if (hasPending) return 'pending';
     return 'paid';
@@ -423,13 +450,14 @@ export default function PaymentTracking() {
   const trackableSpas = allTrackable.filter(filterSpa);
   const creditCardSpas = filterStatus === 'all' ? allCreditCard.filter(filterSpa) : [];
 
-  // Stats: count individual periods across ALL trackable spas (unfiltered)
+  // Stats: count only DUE periods across ALL trackable spas (unfiltered)
   let totalPaidPeriods = 0, totalOverduePeriods = 0, totalPendingPeriods = 0;
   for (const spa of allTrackable) {
     const effBudget = getEffectiveBudget(spa.id, spa.monthly_budget || 0);
-    const { periods } = getPeriods(spa.payment_schedule, month, effBudget);
+    const { count: pCount, periods } = getPeriods(spa.payment_schedule, month, effBudget);
     const spaPayments = payments[spa.id] || {};
     for (const pd of periods) {
+      if (!isPeriodDue(month, pd.period, pCount)) continue; // skip future periods
       const p = spaPayments[pd.period] || {};
       const dl = p.deadline || pd.deadline;
       const amtDue = parseFloat(p.amount_due || pd.amountDue) || 0;
