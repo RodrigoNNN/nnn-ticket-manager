@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { fetchSpas, fetchTickets, fetchAllSpasMonthlyArrivals, upsertSpaArrival } from '../utils/api-service';
+import { fetchSpas, fetchTickets, fetchAllSpasMonthlyArrivals, upsertSpaArrival, fetchAllMonthAdjustments, fetchAppliedCreditsForMonth } from '../utils/api-service';
 import { TIER_DEFINITIONS } from '../utils/constants';
 import SpaTeamBadges from '../components/spa/SpaTeamBadges';
 import SpaGoalStatus from '../components/spa/SpaGoalStatus';
@@ -30,6 +30,8 @@ export default function Clients() {
   });
   const [monthArrivals, setMonthArrivals] = useState([]); // raw rows
   const [arrivalsLoading, setArrivalsLoading] = useState(false);
+  const [adjustments, setAdjustments] = useState({});
+  const [appliedCredits, setAppliedCredits] = useState({});
 
   // Log arrival modal
   const [logModal, setLogModal] = useState(null); // { spaId, spaName }
@@ -47,10 +49,19 @@ export default function Clients() {
   const monthStr = getMonthStr(monthDate);
 
   useEffect(() => {
-    Promise.all([fetchSpas(), fetchTickets()])
-      .then(([s, t]) => { setAllSpas(s); setTickets(t); setLoading(false); })
+    Promise.all([fetchSpas(), fetchTickets(), fetchAllMonthAdjustments(monthStr), fetchAppliedCreditsForMonth(monthStr)])
+      .then(([s, t, allAdj, allCred]) => {
+        setAllSpas(s); setTickets(t);
+        const adjMap = {};
+        for (const a of allAdj) { if (!adjMap[a.spa_id]) adjMap[a.spa_id] = []; adjMap[a.spa_id].push(a); }
+        setAdjustments(adjMap);
+        const credMap = {};
+        for (const c of allCred) { if (!credMap[c.spa_id]) credMap[c.spa_id] = []; credMap[c.spa_id].push(c); }
+        setAppliedCredits(credMap);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
-  }, []);
+  }, [monthStr]);
 
   // Fetch arrivals whenever month changes
   const loadArrivals = useCallback(() => {
@@ -71,6 +82,20 @@ export default function Clients() {
 
   const prevMonth = () => setMonthDate(d => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; });
   const nextMonth = () => setMonthDate(d => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; });
+
+  const getEffectiveBudget = (spaId, baseBudget) => {
+    const spaAdj = adjustments[spaId] || [];
+    const incoming = appliedCredits[spaId] || [];
+    let effective = Number(baseBudget) || 0;
+    for (const a of spaAdj) {
+      const amt = Number(a.amount) || 0;
+      if (a.type === 'add_budget' && a.status === 'active') effective += amt;
+      if (a.type === 'lower_budget' && a.status === 'active') effective -= amt;
+      if (a.type === 'credit_hold' && a.status === 'active') effective -= amt;
+    }
+    for (const c of incoming) effective += (Number(c.amount) || 0);
+    return Math.max(0, effective);
+  };
 
   const handleLogArrival = async () => {
     if (!logCount || Number(logCount) < 0) return toast.error('Enter a valid arrival count');
@@ -319,9 +344,9 @@ export default function Clients() {
               {/* Budget + Log arrival row */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  {spa.monthly_budget && (
+                  {(spa.monthly_budget || getEffectiveBudget(spa.id, 0) > 0) && (
                     <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 font-medium">
-                      ${spa.monthly_budget.toLocaleString()}/mo
+                      ${getEffectiveBudget(spa.id, spa.monthly_budget || 0).toLocaleString()}/mo
                     </span>
                   )}
                   {spa.payment_type === 'credit_card' && (
