@@ -178,7 +178,7 @@ export default function BudgetReport() {
         edits[spa.id] = {};
         for (const s of [1, 2, 3]) {
           const val = map[spa.id]?.[s]?.actual_spend;
-          edits[spa.id][s] = val != null ? val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+          edits[spa.id][s] = val != null && val > 0 ? val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
         }
       }
       setEditValues(edits);
@@ -193,9 +193,13 @@ export default function BudgetReport() {
 
   const handleSave = async (spaId, stageNum) => {
     const key = `${spaId}-${stageNum}`;
+    const val = parseCurrency(editValues[spaId]?.[stageNum]);
+    if (val <= 0) {
+      toast.error('Enter an amount greater than 0');
+      return;
+    }
     setSaving(key);
     try {
-      const val = editValues[spaId]?.[stageNum] || '';
       await upsertBudgetReport(spaId, month, stageNum, val, '', user.id);
       toast.success('Saved');
       await loadData();
@@ -216,7 +220,7 @@ export default function BudgetReport() {
   const isDirty = (spaId, stageNum) => {
     const saved = reports[spaId]?.[stageNum]?.actual_spend;
     const current = editValues[spaId]?.[stageNum] || '';
-    const savedStr = saved != null ? saved.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    const savedStr = saved != null && saved > 0 ? saved.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     return current !== savedStr;
   };
 
@@ -330,7 +334,7 @@ export default function BudgetReport() {
                     {effectiveAdmin && showAll && (() => {
                       const marketingIds = spa.assigned_team?.Marketing || [];
                       const marketingNames = marketingIds
-                        .map(id => allUsers.find(u => u.id === id))
+                        .map(id => (allUsers || []).find(u => u.id === id))
                         .filter(Boolean);
                       const hasAnyReport = totalSpent > 0;
                       const stagesReported = [1, 2, 3].filter(s => (reports[spa.id]?.[s]?.actual_spend || 0) > 0).length;

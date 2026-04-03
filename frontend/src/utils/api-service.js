@@ -483,6 +483,8 @@ export async function fetchBudgetReportsUpToMonth(month) {
 }
 
 export async function upsertBudgetReport(spaId, month, stage, actualSpend, notes, userId) {
+  const amount = parseFloat(String(actualSpend).replace(/[^0-9.\-]/g, '')) || 0;
+  if (amount <= 0) throw new Error('Amount must be greater than 0');
   const { data, error } = await supabase
     .from('spa_budget_reports')
     .upsert({
@@ -490,7 +492,7 @@ export async function upsertBudgetReport(spaId, month, stage, actualSpend, notes
       spa_id: spaId,
       month,
       stage,
-      actual_spend: parseFloat(String(actualSpend).replace(/[^0-9.\-]/g, '')) || 0,
+      actual_spend: amount,
       notes: notes || '',
       reported_by: userId,
       reported_at: new Date().toISOString(),
