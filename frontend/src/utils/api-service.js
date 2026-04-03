@@ -527,6 +527,59 @@ export async function saveBudgetNotes(spaId, month, instructions, userId) {
   if (error) throw error;
 }
 
+// ─── Payment Tracking ───
+
+export async function fetchAllPaymentTracking(month) {
+  const { data, error } = await supabase
+    .from('spa_payment_tracking')
+    .select('*')
+    .eq('month', month)
+    .order('spa_id');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertPaymentTracking(spaId, month, fields, userId) {
+  const { data, error } = await supabase
+    .from('spa_payment_tracking')
+    .upsert({
+      id: `pt-${spaId}-${month}`,
+      spa_id: spaId,
+      month,
+      ...fields,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'spa_id,month' })
+    .select();
+  if (error) throw error;
+  return data?.[0];
+}
+
+export async function fetchPaymentNotes(spaId, month) {
+  const { data, error } = await supabase
+    .from('spa_payment_notes')
+    .select('*')
+    .eq('spa_id', spaId)
+    .eq('month', month)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addPaymentNote(spaId, month, note, userId) {
+  const { data, error } = await supabase
+    .from('spa_payment_notes')
+    .insert({
+      spa_id: spaId,
+      month,
+      note,
+      created_by: userId,
+    })
+    .select();
+  if (error) throw error;
+  return data?.[0];
+}
+
 // ─── Promo Snapshots (for revert logic) ───
 
 async function createPromoSnapshot(ticketId, promo) {

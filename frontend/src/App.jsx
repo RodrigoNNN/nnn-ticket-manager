@@ -14,6 +14,7 @@ import ClientHistory from './pages/ClientHistory';
 import OnboardingForm from './pages/OnboardingForm';
 import Profile from './pages/Profile';
 import BudgetReport from './pages/BudgetReport';
+import PaymentTracking from './pages/PaymentTracking';
 import { Loader2 } from 'lucide-react';
 
 function ProtectedRoute({ children }) {
@@ -64,6 +65,7 @@ export default function App() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/budget-report" element={<BudgetReport />} />
+          <Route path="/payment-tracking" element={<PaymentTracking />} />
           <Route path="/settings" element={<AdminRoute><AdminPanel /></AdminRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/my-tasks" replace />} />
