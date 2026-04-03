@@ -319,7 +319,12 @@ export default function Clients() {
                       ${spa.monthly_budget.toLocaleString()}/mo
                     </span>
                   )}
-                  {spa.payment_schedule && spa.payment_schedule !== 'monthly' && (
+                  {spa.payment_type === 'credit_card' && (
+                    <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                      CC
+                    </span>
+                  )}
+                  {(spa.payment_type || 'invoice') !== 'credit_card' && spa.payment_schedule && spa.payment_schedule !== 'monthly' && (
                     <span className="text-xs px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium capitalize">
                       {spa.payment_schedule}
                     </span>

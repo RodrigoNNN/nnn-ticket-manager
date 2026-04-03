@@ -175,6 +175,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
       tier: spa.tier,
       monthly_budget: spa.monthly_budget ? String(spa.monthly_budget) : '',
       arrival_goal: spa.arrival_goal ? String(spa.arrival_goal) : '',
+      payment_type: spa.payment_type || 'invoice',
       payment_schedule: spa.payment_schedule || 'monthly',
       ads_manager_url: spa.ads_manager_url || '',
       assigned_team: spa.assigned_team ? JSON.parse(JSON.stringify(spa.assigned_team)) : { Management: [], Marketing: [], IT: [], Accounting: [] },
@@ -200,7 +201,8 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
         tier: editData.tier,
         monthly_budget: editData.monthly_budget ? Number(editData.monthly_budget) : null,
         arrival_goal: editData.arrival_goal ? Number(editData.arrival_goal) : null,
-        payment_schedule: editData.payment_schedule,
+        payment_type: editData.payment_type,
+        payment_schedule: editData.payment_type !== 'credit_card' ? editData.payment_schedule : 'monthly',
         ads_manager_url: editData.ads_manager_url,
         onboarding_data: editData.onboarding_data,
         extra_fields: editData.extra_fields,
@@ -358,25 +360,50 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
         </div>
       </div>
 
-      {/* Payment Schedule */}
+      {/* Payment Type & Schedule */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide flex items-center gap-1.5">
-          <Calendar className="w-4 h-4" /> Payment Schedule
+          <Calendar className="w-4 h-4" /> Payment Method
         </h3>
         {editing && canEditPayment ? (
-          <select
-            value={editData.payment_schedule}
-            onChange={e => setEditData(prev => ({ ...prev, payment_schedule: e.target.value }))}
-            className="input-field"
-          >
-            <option value="weekly">Weekly</option>
-            <option value="biweekly">Biweekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Payment Type</label>
+              <select
+                value={editData.payment_type}
+                onChange={e => setEditData(prev => ({ ...prev, payment_type: e.target.value }))}
+                className="input-field"
+              >
+                <option value="credit_card">Credit Card (Client's Own)</option>
+                <option value="invoice">Invoice</option>
+              </select>
+            </div>
+            {editData.payment_type !== 'credit_card' && (
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Payment Schedule</label>
+                <select
+                  value={editData.payment_schedule}
+                  onChange={e => setEditData(prev => ({ ...prev, payment_schedule: e.target.value }))}
+                  className="input-field"
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Biweekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+            )}
+          </div>
         ) : (
-          <p className="text-lg font-bold text-gray-900 dark:text-white capitalize">
-            {spa.payment_schedule || 'Monthly'}
-          </p>
+          <div>
+            <p className="text-lg font-bold text-gray-900 dark:text-white">
+              {(spa.payment_type || 'invoice') === 'credit_card' ? 'Credit Card' : 'Invoice'}
+            </p>
+            {(spa.payment_type || 'invoice') !== 'credit_card' && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 capitalize mt-0.5">
+                {spa.payment_schedule || 'Monthly'} payments
+              </p>
+            )}
+          </div>
         )}
       </div>
 

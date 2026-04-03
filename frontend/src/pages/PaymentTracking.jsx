@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { fetchSpas, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth } from '../utils/api-service';
-import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -167,15 +167,19 @@ export default function PaymentTracking() {
 
   const toggleNotes = (spaId) => setExpandedNotes(prev => ({ ...prev, [spaId]: !prev[spaId] }));
 
-  // Stats
-  const paidCount = spas.filter(s => payments[s.id]?.status === 'paid').length;
-  const overdueCount = spas.filter(s => {
+  // Separate spas by payment type
+  const trackableSpas = spas.filter(s => (s.payment_type || 'invoice') !== 'credit_card');
+  const creditCardSpas = spas.filter(s => (s.payment_type || 'invoice') === 'credit_card');
+
+  // Stats (only count trackable spas)
+  const paidCount = trackableSpas.filter(s => payments[s.id]?.status === 'paid').length;
+  const overdueCount = trackableSpas.filter(s => {
     const p = payments[s.id];
     if (p?.status === 'paid') return false;
     const dl = p?.deadline || getDeadline(s.payment_schedule, month);
     return isOverdue(dl);
   }).length;
-  const pendingCount = spas.length - paidCount - overdueCount;
+  const pendingCount = trackableSpas.length - paidCount - overdueCount;
 
   return (
     <div>
@@ -221,208 +225,275 @@ export default function PaymentTracking() {
         </div>
       ) : (
         <div className="space-y-3">
-          {spas.map(spa => {
-            const budget = spa.monthly_budget || 0;
-            const p = payments[spa.id] || {};
-            const defaultDeadline = getDeadline(spa.payment_schedule, month);
-            const deadline = p.deadline || defaultDeadline;
-            const overdue = p.status !== 'paid' && isOverdue(deadline);
-            const status = p.status === 'paid' ? 'paid' : overdue ? 'overdue' : 'pending';
-            const statusCfg = STATUS_CONFIG[status];
-            const StatusIcon = statusCfg.icon;
-            const balance = runningBalances[spa.id] || 0;
-            const spaNotes = notes[spa.id] || [];
-            const isExpanded = expandedNotes[spa.id];
-            const latestNote = spaNotes[0];
-            const daysSinceNote = latestNote ? Math.floor((Date.now() - new Date(latestNote.created_at).getTime()) / 86400000) : null;
-            const noteAuthor = latestNote ? (allUsers || []).find(u => u.id === latestNote.created_by)?.name : null;
+          {/* Credit Card clients — simplified section */}
+          {creditCardSpas.length > 0 && (
+            <>
+              <div className="flex items-center gap-2 mt-2 mb-1">
+                <CreditCard className="w-4 h-4 text-gray-400" />
+                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Credit Card — No Follow-up Needed</span>
+                <span className="text-[10px] text-gray-400">({creditCardSpas.length})</span>
+              </div>
+              {creditCardSpas.map(spa => {
+                const budget = spa.monthly_budget || 0;
+                const [y, m] = month.split('-').map(Number);
+                const totalDays = getDaysInMonth(new Date(y, m - 1));
+                const dailyPace = totalDays > 0 ? budget / totalDays : 0;
+                const balance = runningBalances[spa.id] || 0;
 
-            return (
-              <div key={spa.id} className={`card overflow-hidden ${statusCfg.rowBg}`}>
-                {/* Main row */}
-                <div className="p-4">
-                  <div className="flex items-start gap-4 flex-wrap">
-                    {/* Client info */}
-                    <div className="min-w-[180px] flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-gray-900 dark:text-white">{spa.name}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize ${
-                          spa.payment_schedule === 'weekly' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                          spa.payment_schedule === 'biweekly' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
-                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
-                        }`}>
-                          {spa.payment_schedule || 'monthly'}
-                        </span>
-                      </div>
-                      {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
-                    </div>
-
-                    {/* Amount due */}
-                    <div className="text-center min-w-[80px]">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Due</p>
-                      <p className="text-sm font-bold text-gray-900 dark:text-white">{budget > 0 ? fmtUSD(budget) : '—'}</p>
-                    </div>
-
-                    {/* Running balance */}
-                    <div className="text-center min-w-[90px]">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Credit/Debit</p>
-                      <p className={`text-sm font-bold ${
-                        balance === 0 ? 'text-gray-400' : balance > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {balance !== 0 ? fmtUSD(balance) : '—'}
-                      </p>
-                    </div>
-
-                    {/* Amount paid */}
-                    <div className="text-center min-w-[100px]">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Paid</p>
-                      {canEdit ? (
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          defaultValue={p.amount_paid > 0 ? p.amount_paid.toLocaleString('en-US', { minimumFractionDigits: 2 }) : ''}
-                          onBlur={(e) => {
-                            const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
-                            if (num > 0) {
-                              e.target.value = num.toLocaleString('en-US', { minimumFractionDigits: 2 });
-                              handleAmountPaid(spa.id, num);
-                            }
-                          }}
-                          placeholder="0.00"
-                          className="input-field text-xs py-1 text-center w-24 mt-0.5"
-                        />
-                      ) : (
-                        <p className="text-sm font-bold text-gray-900 dark:text-white">
-                          {(p.amount_paid || 0) > 0 ? fmtUSD(p.amount_paid) : '—'}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Deadline */}
-                    <div className="text-center min-w-[110px]">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Deadline</p>
-                      {canEdit ? (
-                        <input
-                          type="date"
-                          value={deadline}
-                          onChange={(e) => handleDeadlineChange(spa.id, e.target.value)}
-                          className={`input-field text-xs py-1 text-center w-[120px] mt-0.5 ${overdue ? 'border-red-300 dark:border-red-600' : ''}`}
-                        />
-                      ) : (
-                        <p className={`text-sm font-medium ${overdue ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>
-                          {format(new Date(deadline + 'T12:00:00'), 'MMM d')}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Status */}
-                    <div className="text-center min-w-[110px]">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
-                      {canEdit ? (
-                        <div className="flex gap-1 mt-0.5">
-                          {['pending', 'paid', 'overdue'].map(s => {
-                            const cfg = STATUS_CONFIG[s];
-                            const isActive = status === s;
-                            return (
-                              <button
-                                key={s}
-                                onClick={() => handleStatusChange(spa.id, s)}
-                                disabled={saving === `status-${spa.id}`}
-                                className={`text-[10px] px-2 py-1 rounded-full font-medium transition-colors ${
-                                  isActive ? cfg.bg : 'bg-gray-50 text-gray-400 dark:bg-gray-700/50 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                }`}
-                              >
-                                {cfg.label}
-                              </button>
-                            );
-                          })}
+                return (
+                  <div key={spa.id} className="card overflow-hidden bg-gray-50/50 dark:bg-gray-800/30">
+                    <div className="p-4">
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <div className="min-w-[180px] flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-900 dark:text-white">{spa.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                              Credit Card
+                            </span>
+                          </div>
+                          {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
                         </div>
-                      ) : (
-                        <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${statusCfg.bg}`}>
-                          <StatusIcon className="w-3 h-3" /> {statusCfg.label}
-                        </span>
-                      )}
+                        <div className="text-center min-w-[90px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Monthly</p>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">{budget > 0 ? fmtUSD(budget) : '—'}</p>
+                        </div>
+                        <div className="text-center min-w-[90px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Daily Pace</p>
+                          <p className="text-sm font-bold text-gray-700 dark:text-gray-300">{dailyPace > 0 ? `${fmtUSD(dailyPace)}/d` : '—'}</p>
+                        </div>
+                        <div className="text-center min-w-[90px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Credit/Debit</p>
+                          <p className={`text-sm font-bold ${
+                            balance === 0 ? 'text-gray-400' : balance > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          }`}>
+                            {balance !== 0 ? fmtUSD(balance) : '—'}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-
-                    {/* Notes toggle */}
-                    <button
-                      onClick={() => toggleNotes(spa.id)}
-                      className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg transition-colors mt-3 ${
-                        isExpanded ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                        spaNotes.length > 0 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' :
-                        'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      {spaNotes.length > 0 ? spaNotes.length : ''}
-                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                    </button>
                   </div>
+                );
+              })}
+            </>
+          )}
 
-                  {/* Latest note preview (when collapsed) */}
-                  {!isExpanded && latestNote && (
-                    <div className="mt-2 pl-1 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-                      <span className="truncate max-w-[400px]">{latestNote.note}</span>
-                      <span className="flex-shrink-0">— {noteAuthor || 'Unknown'}</span>
-                      {daysSinceNote != null && (
-                        <span className={`flex-shrink-0 ${daysSinceNote > 7 ? 'text-red-500' : daysSinceNote > 3 ? 'text-yellow-500' : 'text-gray-400'}`}>
-                          {daysSinceNote === 0 ? 'today' : `${daysSinceNote}d ago`}
-                        </span>
-                      )}
-                    </div>
-                  )}
+          {/* Invoice / Our Credit Card clients — full tracking */}
+          {trackableSpas.length > 0 && (
+            <>
+              {creditCardSpas.length > 0 && (
+                <div className="flex items-center gap-2 mt-4 mb-1">
+                  <Clock className="w-4 h-4 text-gray-400" />
+                  <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Invoice — Follow-up Required</span>
+                  <span className="text-[10px] text-gray-400">({trackableSpas.length})</span>
                 </div>
+              )}
+              {trackableSpas.map(spa => {
+                const budget = spa.monthly_budget || 0;
+                const p = payments[spa.id] || {};
+                const defaultDeadline = getDeadline(spa.payment_schedule, month);
+                const deadline = p.deadline || defaultDeadline;
+                const overdue = p.status !== 'paid' && isOverdue(deadline);
+                const status = p.status === 'paid' ? 'paid' : overdue ? 'overdue' : 'pending';
+                const statusCfg = STATUS_CONFIG[status];
+                const StatusIcon = statusCfg.icon;
+                const balance = runningBalances[spa.id] || 0;
+                const spaNotes = notes[spa.id] || [];
+                const isExpanded = expandedNotes[spa.id];
+                const latestNote = spaNotes[0];
+                const daysSinceNote = latestNote ? Math.floor((Date.now() - new Date(latestNote.created_at).getTime()) / 86400000) : null;
+                const noteAuthor = latestNote ? (allUsers || []).find(u => u.id === latestNote.created_by)?.name : null;
 
-                {/* Expanded notes section */}
-                {isExpanded && (
-                  <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 px-4 py-3">
-                    {/* Add note input */}
-                    {canEdit && (
-                      <div className="flex gap-2 mb-3">
-                        <input
-                          type="text"
-                          value={noteInputs[spa.id] || ''}
-                          onChange={(e) => setNoteInputs(prev => ({ ...prev, [spa.id]: e.target.value }))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(spa.id); }}
-                          placeholder="Add a note..."
-                          className="input-field text-xs py-1.5 flex-1"
-                        />
+                return (
+                  <div key={spa.id} className={`card overflow-hidden ${statusCfg.rowBg}`}>
+                    {/* Main row */}
+                    <div className="p-4">
+                      <div className="flex items-start gap-4 flex-wrap">
+                        {/* Client info */}
+                        <div className="min-w-[180px] flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-gray-900 dark:text-white">{spa.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                              Invoice
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize ${
+                              spa.payment_schedule === 'weekly' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                              spa.payment_schedule === 'biweekly' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
+                              'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                            }`}>
+                              {spa.payment_schedule || 'monthly'}
+                            </span>
+                          </div>
+                          {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
+                        </div>
+
+                        {/* Amount due */}
+                        <div className="text-center min-w-[80px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Due</p>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">{budget > 0 ? fmtUSD(budget) : '—'}</p>
+                        </div>
+
+                        {/* Running balance */}
+                        <div className="text-center min-w-[90px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Credit/Debit</p>
+                          <p className={`text-sm font-bold ${
+                            balance === 0 ? 'text-gray-400' : balance > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          }`}>
+                            {balance !== 0 ? fmtUSD(balance) : '—'}
+                          </p>
+                        </div>
+
+                        {/* Amount paid */}
+                        <div className="text-center min-w-[100px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Paid</p>
+                          {canEdit ? (
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              defaultValue={p.amount_paid > 0 ? p.amount_paid.toLocaleString('en-US', { minimumFractionDigits: 2 }) : ''}
+                              onBlur={(e) => {
+                                const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
+                                if (num > 0) {
+                                  e.target.value = num.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                                  handleAmountPaid(spa.id, num);
+                                }
+                              }}
+                              placeholder="0.00"
+                              className="input-field text-xs py-1 text-center w-24 mt-0.5"
+                            />
+                          ) : (
+                            <p className="text-sm font-bold text-gray-900 dark:text-white">
+                              {(p.amount_paid || 0) > 0 ? fmtUSD(p.amount_paid) : '—'}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Deadline */}
+                        <div className="text-center min-w-[110px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Deadline</p>
+                          {canEdit ? (
+                            <input
+                              type="date"
+                              value={deadline}
+                              onChange={(e) => handleDeadlineChange(spa.id, e.target.value)}
+                              className={`input-field text-xs py-1 text-center w-[120px] mt-0.5 ${overdue ? 'border-red-300 dark:border-red-600' : ''}`}
+                            />
+                          ) : (
+                            <p className={`text-sm font-medium ${overdue ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>
+                              {format(new Date(deadline + 'T12:00:00'), 'MMM d')}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Status */}
+                        <div className="text-center min-w-[110px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
+                          {canEdit ? (
+                            <div className="flex gap-1 mt-0.5">
+                              {['pending', 'paid', 'overdue'].map(s => {
+                                const cfg = STATUS_CONFIG[s];
+                                const isActive = status === s;
+                                return (
+                                  <button
+                                    key={s}
+                                    onClick={() => handleStatusChange(spa.id, s)}
+                                    disabled={saving === `status-${spa.id}`}
+                                    className={`text-[10px] px-2 py-1 rounded-full font-medium transition-colors ${
+                                      isActive ? cfg.bg : 'bg-gray-50 text-gray-400 dark:bg-gray-700/50 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                    }`}
+                                  >
+                                    {cfg.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${statusCfg.bg}`}>
+                              <StatusIcon className="w-3 h-3" /> {statusCfg.label}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Notes toggle */}
                         <button
-                          onClick={() => handleAddNote(spa.id)}
-                          disabled={!(noteInputs[spa.id] || '').trim() || saving === `note-${spa.id}`}
-                          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 transition-colors flex items-center gap-1"
+                          onClick={() => toggleNotes(spa.id)}
+                          className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg transition-colors mt-3 ${
+                            isExpanded ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                            spaNotes.length > 0 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' :
+                            'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
                         >
-                          {saving === `note-${spa.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          {spaNotes.length > 0 ? spaNotes.length : ''}
+                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                         </button>
                       </div>
-                    )}
 
-                    {/* Notes timeline */}
-                    {spaNotes.length > 0 ? (
-                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                        {spaNotes.map(n => {
-                          const author = (allUsers || []).find(u => u.id === n.created_by)?.name || 'Unknown';
-                          return (
-                            <div key={n.id} className="flex gap-2 text-xs">
-                              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-gray-700 dark:text-gray-300">{n.note}</p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">
-                                  {author} · {format(new Date(n.created_at), 'MMM d, h:mm a')}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
+                      {/* Latest note preview (when collapsed) */}
+                      {!isExpanded && latestNote && (
+                        <div className="mt-2 pl-1 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                          <span className="truncate max-w-[400px]">{latestNote.note}</span>
+                          <span className="flex-shrink-0">— {noteAuthor || 'Unknown'}</span>
+                          {daysSinceNote != null && (
+                            <span className={`flex-shrink-0 ${daysSinceNote > 7 ? 'text-red-500' : daysSinceNote > 3 ? 'text-yellow-500' : 'text-gray-400'}`}>
+                              {daysSinceNote === 0 ? 'today' : `${daysSinceNote}d ago`}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Expanded notes section */}
+                    {isExpanded && (
+                      <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 px-4 py-3">
+                        {/* Add note input */}
+                        {canEdit && (
+                          <div className="flex gap-2 mb-3">
+                            <input
+                              type="text"
+                              value={noteInputs[spa.id] || ''}
+                              onChange={(e) => setNoteInputs(prev => ({ ...prev, [spa.id]: e.target.value }))}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(spa.id); }}
+                              placeholder="Add a note..."
+                              className="input-field text-xs py-1.5 flex-1"
+                            />
+                            <button
+                              onClick={() => handleAddNote(spa.id)}
+                              disabled={!(noteInputs[spa.id] || '').trim() || saving === `note-${spa.id}`}
+                              className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 transition-colors flex items-center gap-1"
+                            >
+                              {saving === `note-${spa.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Notes timeline */}
+                        {spaNotes.length > 0 ? (
+                          <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                            {spaNotes.map(n => {
+                              const author = (allUsers || []).find(u => u.id === n.created_by)?.name || 'Unknown';
+                              return (
+                                <div key={n.id} className="flex gap-2 text-xs">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-gray-700 dark:text-gray-300">{n.note}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">
+                                      {author} · {format(new Date(n.created_at), 'MMM d, h:mm a')}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 italic">No notes yet</p>
+                        )}
                       </div>
-                    ) : (
-                      <p className="text-xs text-gray-400 italic">No notes yet</p>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </div>
