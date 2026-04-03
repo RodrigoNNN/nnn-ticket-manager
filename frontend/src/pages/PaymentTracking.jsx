@@ -99,8 +99,8 @@ export default function PaymentTracking() {
     setTimeout(() => setSavedIndicator(prev => prev === key ? null : prev), 2000);
   };
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [allSpas, allPayments, historicalReports, allAdjustments, allAppliedCredits] = await Promise.all([
         fetchSpas(),
@@ -183,7 +183,7 @@ export default function PaymentTracking() {
       else fields.paid_at = null;
       await upsertPaymentTracking(spaId, month, fields, user.id, period);
       flashSaved(`card-${spaId}`);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to update status');
     } finally {
@@ -197,7 +197,7 @@ export default function PaymentTracking() {
     try {
       await upsertPaymentTracking(spaId, month, { deadline }, user.id, period);
       flashSaved(`card-${spaId}`);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to update deadline');
     } finally {
@@ -213,7 +213,7 @@ export default function PaymentTracking() {
     try {
       await upsertPaymentTracking(spaId, month, { amount_paid: num }, user.id, period);
       flashSaved(`card-${spaId}`);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to save amount');
     } finally {
@@ -229,7 +229,7 @@ export default function PaymentTracking() {
     try {
       await upsertPaymentTracking(spaId, month, { amount_due: num }, user.id, period);
       flashSaved(`card-${spaId}`);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to update amount due');
     } finally {
@@ -260,7 +260,7 @@ export default function PaymentTracking() {
       await updateSpa(spaId, { payment_type: newType });
       toast.success(`Changed to ${PAYMENT_TYPE_LABELS[newType]}`);
       setEditingSettings(null);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to update payment type');
     } finally {
@@ -273,7 +273,7 @@ export default function PaymentTracking() {
     try {
       await updateSpa(spaId, { payment_schedule: newSchedule });
       toast.success(`Changed to ${SCHEDULE_LABELS[newSchedule]}`);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to update schedule');
     } finally {
@@ -295,7 +295,7 @@ export default function PaymentTracking() {
       setAdjModal(null);
       setAdjAmount('');
       setAdjNote('');
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to save adjustment');
     } finally {
@@ -308,7 +308,7 @@ export default function PaymentTracking() {
     try {
       await updateAdjustmentStatus(adjId, 'applied', targetMonth);
       toast.success('Credit applied to next month');
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to apply credit');
     } finally {
@@ -321,7 +321,7 @@ export default function PaymentTracking() {
     try {
       await updateAdjustmentStatus(adjId, 'returned');
       toast.success('Credit returned');
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to return credit');
     } finally {
@@ -334,7 +334,7 @@ export default function PaymentTracking() {
     try {
       await deleteMonthAdjustment(adjId);
       toast.success('Removed');
-      await loadData();
+      await loadData(true);
     } catch (err) {
       toast.error('Failed to remove');
     } finally {
