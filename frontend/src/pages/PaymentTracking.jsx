@@ -381,7 +381,11 @@ export default function PaymentTracking() {
     for (const pd of periods) {
       const p = spaPayments[pd.period] || {};
       const dl = p.deadline || pd.deadline;
-      if (p.status === 'paid') continue;
+      const amtDue = parseFloat(p.amount_due || pd.amountDue) || 0;
+      const amtPaid = parseFloat(p.amount_paid) || 0;
+      // Consider paid if status is 'paid' OR if amount_paid covers amount_due
+      const isPaid = p.status === 'paid' || (amtDue > 0 && amtPaid >= amtDue);
+      if (isPaid) continue;
       if (isOverdue(dl)) hasOverdue = true;
       else hasPending = true;
     }
@@ -417,7 +421,7 @@ export default function PaymentTracking() {
   const allTrackable = spas.filter(s => (s.payment_type || 'invoice') !== 'credit_card');
   const allCreditCard = spas.filter(s => (s.payment_type || 'invoice') === 'credit_card');
   const trackableSpas = allTrackable.filter(filterSpa);
-  const creditCardSpas = (filterStatus === 'all' || filterStatus === 'none') ? allCreditCard.filter(filterSpa) : [];
+  const creditCardSpas = filterStatus === 'all' ? allCreditCard.filter(filterSpa) : [];
 
   // Stats: count individual periods across ALL trackable spas (unfiltered)
   let totalPaidPeriods = 0, totalOverduePeriods = 0, totalPendingPeriods = 0;
@@ -428,7 +432,10 @@ export default function PaymentTracking() {
     for (const pd of periods) {
       const p = spaPayments[pd.period] || {};
       const dl = p.deadline || pd.deadline;
-      if (p.status === 'paid') totalPaidPeriods++;
+      const amtDue = parseFloat(p.amount_due || pd.amountDue) || 0;
+      const amtPaid = parseFloat(p.amount_paid) || 0;
+      const isPaid = p.status === 'paid' || (amtDue > 0 && amtPaid >= amtDue);
+      if (isPaid) totalPaidPeriods++;
       else if (isOverdue(dl)) totalOverduePeriods++;
       else totalPendingPeriods++;
     }
@@ -581,14 +588,15 @@ export default function PaymentTracking() {
       </div>
 
       {/* Stats bar — clickable as quick status filters */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-5 gap-3 mb-4">
         {[
+          { key: 'all', label: 'All', count: totalPaidPeriods + totalPendingPeriods + totalOverduePeriods, color: 'text-blue-600', ring: 'ring-blue-400' },
           { key: 'not_paid', label: 'Not Paid', count: totalPendingPeriods + totalOverduePeriods, color: 'text-orange-600', ring: 'ring-orange-400' },
           { key: 'paid', label: 'Paid', count: totalPaidPeriods, color: 'text-green-600', ring: 'ring-green-400' },
           { key: 'pending', label: 'Pending', count: totalPendingPeriods, color: 'text-yellow-600', ring: 'ring-yellow-400' },
           { key: 'overdue', label: 'Overdue', count: totalOverduePeriods, color: 'text-red-600', ring: 'ring-red-400' },
         ].map(s => (
-          <button key={s.key} onClick={() => setFilterStatus(prev => prev === s.key ? 'all' : s.key)}
+          <button key={s.key} onClick={() => setFilterStatus(s.key)}
             className={`card p-4 text-center transition-all ${filterStatus === s.key ? `ring-2 ${s.ring}` : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
             <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{s.label}</p>
             <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
@@ -749,7 +757,10 @@ export default function PaymentTracking() {
                 const periodStatuses = periods.map(pd => {
                   const p = spaPayments[pd.period] || {};
                   const dl = p.deadline || pd.deadline;
-                  if (p.status === 'paid') return 'paid';
+                  const amtDue = parseFloat(p.amount_due || pd.amountDue) || 0;
+                  const amtPaid = parseFloat(p.amount_paid) || 0;
+                  const isPaid = p.status === 'paid' || (amtDue > 0 && amtPaid >= amtDue);
+                  if (isPaid) return 'paid';
                   if (isOverdue(dl)) return 'overdue';
                   return 'pending';
                 });
