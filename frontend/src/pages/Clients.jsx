@@ -281,7 +281,12 @@ export default function Clients() {
                       <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{spa.name}</h3>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{spa.name}</h3>
+                        {spa.tag && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-mono font-medium">{spa.tag}</span>
+                        )}
+                      </div>
                       {spa.location && (
                         <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
                           <MapPin className="w-3 h-3" /> {spa.location}

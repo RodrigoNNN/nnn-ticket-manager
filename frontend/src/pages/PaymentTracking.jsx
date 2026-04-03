@@ -701,6 +701,9 @@ export default function PaymentTracking() {
                         <div className="min-w-[180px] flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-gray-900 dark:text-white">{spa.name}</span>
+                            {spa.tag && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-mono font-medium">{spa.tag}</span>
+                            )}
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                               Credit Card
                             </span>
@@ -807,6 +810,9 @@ export default function PaymentTracking() {
                         <div className="min-w-[180px] flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold text-gray-900 dark:text-white">{spa.name}</span>
+                            {spa.tag && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-mono font-medium">{spa.tag}</span>
+                            )}
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
                               Invoice
                             </span>

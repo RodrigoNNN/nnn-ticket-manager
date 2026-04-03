@@ -13,7 +13,7 @@ import SpaTeamEditor from '../components/spa/SpaTeamEditor';
 import SpaTeamBadges from '../components/spa/SpaTeamBadges';
 import BudgetBreakdown from '../components/spa/BudgetBreakdown';
 import BudgetPacing from '../components/spa/BudgetPacing';
-import { ArrowLeft, Building2, MapPin, Ticket, PlusCircle, Pencil, Save, X, DollarSign, Target, Calendar, Plus, Trash2, Users, Loader2, Link2 } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Ticket, PlusCircle, Pencil, Save, X, DollarSign, Target, Calendar, Plus, Trash2, Users, Loader2, Link2, Tag } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -177,6 +177,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
       arrival_goal: spa.arrival_goal ? String(spa.arrival_goal) : '',
       payment_type: spa.payment_type || 'invoice',
       payment_schedule: spa.payment_schedule || 'monthly',
+      tag: spa.tag || '',
       ads_manager_url: spa.ads_manager_url || '',
       assigned_team: spa.assigned_team ? JSON.parse(JSON.stringify(spa.assigned_team)) : { Management: [], Marketing: [], IT: [], Accounting: [] },
       promos: JSON.parse(JSON.stringify(spa.promos || [])),
@@ -203,6 +204,7 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
         arrival_goal: editData.arrival_goal ? Number(editData.arrival_goal) : null,
         payment_type: editData.payment_type,
         payment_schedule: editData.payment_type !== 'credit_card' ? editData.payment_schedule : 'monthly',
+        tag: editData.tag || null,
         ads_manager_url: editData.ads_manager_url,
         onboarding_data: editData.onboarding_data,
         extra_fields: editData.extra_fields,
@@ -358,6 +360,29 @@ function SpaProfile({ spa, editing, setEditing, onRefresh }) {
             </p>
           )}
         </div>
+      </div>
+
+      {/* Tag Number */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide flex items-center gap-1.5">
+          <Tag className="w-4 h-4" /> Tag Number
+        </h3>
+        {editing && canEditPayment ? (
+          <div>
+            <input
+              type="text"
+              value={editData.tag}
+              onChange={e => setEditData(prev => ({ ...prev, tag: e.target.value }))}
+              placeholder="e.g. tag32"
+              className="input-field"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">Unique identifier for campaign tracking</p>
+          </div>
+        ) : (
+          <p className="text-lg font-bold text-gray-900 dark:text-white">
+            {spa.tag || <span className="text-gray-400 text-sm font-normal">Not set</span>}
+          </p>
+        )}
       </div>
 
       {/* Payment Type & Schedule */}
