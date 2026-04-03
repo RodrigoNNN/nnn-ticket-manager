@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { fetchSpas, updateSpa, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth, fetchAllMonthAdjustments, fetchAppliedCreditsForMonth, createMonthAdjustment, updateAdjustmentStatus, deleteMonthAdjustment } from '../utils/api-service';
-import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard, Settings2, PlusCircle, MinusCircle, Wallet, ArrowRight, Undo2, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard, Settings2, PlusCircle, MinusCircle, Wallet, ArrowRight, Undo2, Trash2, Search, Filter } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -87,9 +87,13 @@ export default function PaymentTracking() {
   const [editingSettings, setEditingSettings] = useState(null);
   const [adjustments, setAdjustments] = useState({});   // { spaId: [adjustments] }
   const [appliedCredits, setAppliedCredits] = useState({}); // credits applied TO this month from other months
-  const [adjModal, setAdjModal] = useState(null);       // { spaId, type: 'add_budget'|'lower_budget'|'credit_hold' }
+  const [adjModal, setAdjModal] = useState(null);
   const [adjAmount, setAdjAmount] = useState('');
   const [adjNote, setAdjNote] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');     // all, paid, pending, overdue
+  const [filterSchedule, setFilterSchedule] = useState('all'); // all, weekly, biweekly, monthly
+  const [filterType, setFilterType] = useState('all');         // all, invoice, credit_card
+  const [searchQuery, setSearchQuery] = useState('');
 
   const effectiveAdmin = isAdmin && !isViewingAsOther;
   const canEdit = effectiveAdmin || user?.department === 'Accounting';
@@ -368,12 +372,54 @@ export default function PaymentTracking() {
 
   // ─── Derived data ───
 
-  const trackableSpas = spas.filter(s => (s.payment_type || 'invoice') !== 'credit_card');
-  const creditCardSpas = spas.filter(s => (s.payment_type || 'invoice') === 'credit_card');
+  // Get worst status for a spa across all its periods
+  const getSpaWorstStatus = (spa) => {
+    const effBudget = getEffectiveBudget(spa.id, spa.monthly_budget || 0);
+    const { periods } = getPeriods(spa.payment_schedule, month, effBudget);
+    const spaPayments = payments[spa.id] || {};
+    let hasOverdue = false, hasPending = false;
+    for (const pd of periods) {
+      const p = spaPayments[pd.period] || {};
+      const dl = p.deadline || pd.deadline;
+      if (p.status === 'paid') continue;
+      if (isOverdue(dl)) hasOverdue = true;
+      else hasPending = true;
+    }
+    if (hasOverdue) return 'overdue';
+    if (hasPending) return 'pending';
+    return 'paid';
+  };
 
-  // Stats: count individual periods across all trackable spas
+  // Filter spas
+  const query = searchQuery.toLowerCase().trim();
+  const filterSpa = (spa) => {
+    // Search
+    if (query && !spa.name.toLowerCase().includes(query) && !(spa.location || '').toLowerCase().includes(query)) return false;
+    // Type
+    const type = spa.payment_type || 'invoice';
+    if (filterType !== 'all' && type !== filterType) return false;
+    // Schedule (only for invoice)
+    if (filterSchedule !== 'all' && type !== 'credit_card') {
+      const sched = spa.payment_schedule || 'monthly';
+      if (sched !== filterSchedule) return false;
+    }
+    // Status
+    if (filterStatus !== 'all') {
+      if (type === 'credit_card') return false; // CC spas don't have status
+      const worst = getSpaWorstStatus(spa);
+      if (filterStatus !== worst) return false;
+    }
+    return true;
+  };
+
+  const allTrackable = spas.filter(s => (s.payment_type || 'invoice') !== 'credit_card');
+  const allCreditCard = spas.filter(s => (s.payment_type || 'invoice') === 'credit_card');
+  const trackableSpas = allTrackable.filter(filterSpa);
+  const creditCardSpas = (filterStatus === 'all' || filterStatus === 'none') ? allCreditCard.filter(filterSpa) : [];
+
+  // Stats: count individual periods across ALL trackable spas (unfiltered)
   let totalPaidPeriods = 0, totalOverduePeriods = 0, totalPendingPeriods = 0;
-  for (const spa of trackableSpas) {
+  for (const spa of allTrackable) {
     const effBudget = getEffectiveBudget(spa.id, spa.monthly_budget || 0);
     const { periods } = getPeriods(spa.payment_schedule, month, effBudget);
     const spaPayments = payments[spa.id] || {};
@@ -385,6 +431,8 @@ export default function PaymentTracking() {
       else totalPendingPeriods++;
     }
   }
+
+  const hasActiveFilters = filterStatus !== 'all' || filterSchedule !== 'all' || filterType !== 'all' || query;
 
   // ─── Period row renderer ───
 
@@ -530,20 +578,55 @@ export default function PaymentTracking() {
         </div>
       </div>
 
-      {/* Stats bar — counts individual payment periods */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="card p-4 text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Paid</p>
-          <p className="text-2xl font-bold text-green-600">{totalPaidPeriods}</p>
+      {/* Stats bar — clickable as quick status filters */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        {[
+          { key: 'paid', label: 'Paid', count: totalPaidPeriods, color: 'text-green-600', ring: 'ring-green-400' },
+          { key: 'pending', label: 'Pending', count: totalPendingPeriods, color: 'text-yellow-600', ring: 'ring-yellow-400' },
+          { key: 'overdue', label: 'Overdue', count: totalOverduePeriods, color: 'text-red-600', ring: 'ring-red-400' },
+        ].map(s => (
+          <button key={s.key} onClick={() => setFilterStatus(prev => prev === s.key ? 'all' : s.key)}
+            className={`card p-4 text-center transition-all ${filterStatus === s.key ? `ring-2 ${s.ring}` : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{s.label}</p>
+            <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className="relative flex-1 min-w-[180px] max-w-[300px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search client..."
+            className="input-field text-xs py-1.5 pl-8 w-full"
+          />
         </div>
-        <div className="card p-4 text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Pending</p>
-          <p className="text-2xl font-bold text-yellow-600">{totalPendingPeriods}</p>
-        </div>
-        <div className="card p-4 text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Overdue</p>
-          <p className="text-2xl font-bold text-red-600">{totalOverduePeriods}</p>
-        </div>
+        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="input-field text-xs py-1.5 w-auto">
+          <option value="all">All Types</option>
+          <option value="invoice">Invoice</option>
+          <option value="credit_card">Credit Card</option>
+        </select>
+        <select value={filterSchedule} onChange={(e) => setFilterSchedule(e.target.value)} className="input-field text-xs py-1.5 w-auto">
+          <option value="all">All Schedules</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Biweekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        {hasActiveFilters && (
+          <button onClick={() => { setFilterStatus('all'); setFilterSchedule('all'); setFilterType('all'); setSearchQuery(''); }}
+            className="text-[10px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 px-2 py-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+            Clear filters
+          </button>
+        )}
+        {hasActiveFilters && (
+          <span className="text-[10px] text-gray-400">
+            Showing {trackableSpas.length + creditCardSpas.length} of {spas.length} clients
+          </span>
+        )}
       </div>
 
       {loading ? (
