@@ -37,7 +37,7 @@ function getCurrentStage(month) {
   return 3;
 }
 
-function getDailyPaces(budget, month, stageSpends) {
+function getDailyPaces(budget, month, stageSpends, stageHasReport) {
   const [y, m] = month.split('-').map(Number);
   const totalDays = getDaysInMonth(new Date(y, m - 1));
   const target = totalDays > 0 ? budget / totalDays : 0;
@@ -49,6 +49,7 @@ function getDailyPaces(budget, month, stageSpends) {
   let stageLabel = '';
   let stageExpected = 0;
   let stageSpent = 0;
+  let hasData = false;
 
   if (isCurrentMonth && budget > 0) {
     const dayOfMonth = today.getDate();
@@ -66,18 +67,24 @@ function getDailyPaces(budget, month, stageSpends) {
     const stageDays = stageEnd - stageStart + 1;
     stageExpected = target * stageDays;
     stageSpent = stageSpends[stageNum] || 0;
+    hasData = stageHasReport[stageNum] || false;
     remainingDays = stageEnd - dayOfMonth;
     stageLabel = `S${stageNum}`;
 
-    if (remainingDays > 0) {
-      adjusted = (stageExpected - stageSpent) / remainingDays;
-    } else if (remainingDays === 0) {
-      // Last day of stage — show what's left to spend today
-      adjusted = stageExpected - stageSpent;
+    if (hasData) {
+      // Spend reported: recalculate pace based on what's left
+      if (remainingDays > 0) {
+        adjusted = (stageExpected - stageSpent) / remainingDays;
+      } else {
+        adjusted = stageExpected - stageSpent;
+      }
+    } else {
+      // No spend reported yet: show steady pace for the full stage
+      adjusted = stageDays > 0 ? stageExpected / stageDays : 0;
     }
   }
 
-  return { target, adjusted, remainingDays, totalDays, stageLabel, stageExpected, stageSpent };
+  return { target, adjusted, remainingDays, totalDays, stageLabel, stageExpected, stageSpent, hasData };
 }
 
 export default function BudgetReport() {
@@ -292,9 +299,10 @@ export default function BudgetReport() {
               {spas.map(spa => {
                 const budget = spa.monthly_budget || 0;
                 const stageSpends = { 1: reports[spa.id]?.[1]?.actual_spend || 0, 2: reports[spa.id]?.[2]?.actual_spend || 0, 3: reports[spa.id]?.[3]?.actual_spend || 0 };
+                const stageHasReport = { 1: reports[spa.id]?.[1] != null, 2: reports[spa.id]?.[2] != null, 3: reports[spa.id]?.[3] != null };
                 const totalSpent = stageSpends[1] + stageSpends[2] + stageSpends[3];
                 const credit = budget - totalSpent;
-                const pace = getDailyPaces(budget, month, stageSpends);
+                const pace = getDailyPaces(budget, month, stageSpends, stageHasReport);
 
                 return (
                   <tr key={spa.id} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-800/30">
@@ -376,18 +384,20 @@ export default function BudgetReport() {
                           {pace.adjusted != null ? (
                             <>
                               <div className={`text-xs font-bold ${
-                                pace.adjusted < 0
-                                  ? 'text-red-600 dark:text-red-400'
-                                  : Math.abs(pace.adjusted - pace.target) < pace.target * 0.1
-                                    ? 'text-green-600 dark:text-green-400'
-                                    : pace.adjusted > pace.target
-                                      ? 'text-yellow-600 dark:text-yellow-400'
-                                      : 'text-blue-600 dark:text-blue-400'
+                                !pace.hasData
+                                  ? 'text-gray-700 dark:text-gray-300'
+                                  : pace.adjusted < 0
+                                    ? 'text-red-600 dark:text-red-400'
+                                    : Math.abs(pace.adjusted - pace.target) < pace.target * 0.1
+                                      ? 'text-green-600 dark:text-green-400'
+                                      : pace.adjusted > pace.target
+                                        ? 'text-yellow-600 dark:text-yellow-400'
+                                        : 'text-blue-600 dark:text-blue-400'
                               }`}>
-                                {pace.adjusted < 0 ? 'Over budget' : `${fmtUSD(pace.adjusted)}/d`}
+                                {pace.hasData && pace.adjusted < 0 ? 'Over budget' : `${fmtUSD(pace.adjusted)}/d`}
                               </div>
                               <div className="text-[9px] text-gray-400 mt-0.5">
-                                {pace.stageLabel} · {pace.remainingDays}d left
+                                {pace.stageLabel} · {pace.hasData ? `${pace.remainingDays}d left` : 'steady'}
                               </div>
                             </>
                           ) : (
