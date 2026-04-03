@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { fetchSpas, updateSpa, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth } from '../utils/api-service';
-import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard, Settings2 } from 'lucide-react';
+import { fetchSpas, updateSpa, fetchAllPaymentTracking, upsertPaymentTracking, fetchPaymentNotes, addPaymentNote, fetchBudgetReportsUpToMonth, fetchAllMonthAdjustments, fetchAppliedCreditsForMonth, createMonthAdjustment, updateAdjustmentStatus, deleteMonthAdjustment } from '../utils/api-service';
+import { ChevronLeft, ChevronRight, Loader2, Send, CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, ChevronUp, CreditCard, Settings2, PlusCircle, MinusCircle, Wallet, ArrowRight, Undo2, Trash2 } from 'lucide-react';
 import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -83,8 +83,13 @@ export default function PaymentTracking() {
   const [noteInputs, setNoteInputs] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
-  const [savedIndicator, setSavedIndicator] = useState(null); // shows "Saved ✓" briefly
-  const [editingSettings, setEditingSettings] = useState(null); // spaId being edited
+  const [savedIndicator, setSavedIndicator] = useState(null);
+  const [editingSettings, setEditingSettings] = useState(null);
+  const [adjustments, setAdjustments] = useState({});   // { spaId: [adjustments] }
+  const [appliedCredits, setAppliedCredits] = useState({}); // credits applied TO this month from other months
+  const [adjModal, setAdjModal] = useState(null);       // { spaId, type: 'add_budget'|'lower_budget'|'credit_hold' }
+  const [adjAmount, setAdjAmount] = useState('');
+  const [adjNote, setAdjNote] = useState('');
 
   const effectiveAdmin = isAdmin && !isViewingAsOther;
   const canEdit = effectiveAdmin || user?.department === 'Accounting';
@@ -97,10 +102,12 @@ export default function PaymentTracking() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [allSpas, allPayments, historicalReports] = await Promise.all([
+      const [allSpas, allPayments, historicalReports, allAdjustments, allAppliedCredits] = await Promise.all([
         fetchSpas(),
         fetchAllPaymentTracking(month),
         fetchBudgetReportsUpToMonth(month),
+        fetchAllMonthAdjustments(month),
+        fetchAppliedCreditsForMonth(month),
       ]);
 
       allSpas.sort((a, b) => a.name.localeCompare(b.name));
@@ -131,6 +138,22 @@ export default function PaymentTracking() {
         balances[spa.id] = cumulative;
       }
       setRunningBalances(balances);
+
+      // Build adjustments map: { spaId: [adj1, adj2, ...] }
+      const adjMap = {};
+      for (const adj of allAdjustments) {
+        if (!adjMap[adj.spa_id]) adjMap[adj.spa_id] = [];
+        adjMap[adj.spa_id].push(adj);
+      }
+      setAdjustments(adjMap);
+
+      // Applied credits from other months TO this month
+      const creditMap = {};
+      for (const c of allAppliedCredits) {
+        if (!creditMap[c.spa_id]) creditMap[c.spa_id] = [];
+        creditMap[c.spa_id].push(c);
+      }
+      setAppliedCredits(creditMap);
 
       // Load notes
       const notesMap = {};
@@ -258,6 +281,85 @@ export default function PaymentTracking() {
     }
   };
 
+  // ─── Adjustment handlers ───
+
+  const handleCreateAdjustment = async () => {
+    if (!adjModal || !adjAmount) return;
+    const num = parseFloat(String(adjAmount).replace(/[^0-9.]/g, '')) || 0;
+    if (num <= 0) return;
+    setSaving('adj');
+    try {
+      await createMonthAdjustment(adjModal.spaId, month, adjModal.type, num, adjNote, user.id);
+      const label = adjModal.type === 'add_budget' ? 'Budget added' : adjModal.type === 'lower_budget' ? 'Budget lowered' : 'Credit saved';
+      toast.success(label);
+      setAdjModal(null);
+      setAdjAmount('');
+      setAdjNote('');
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to save adjustment');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleApplyCredit = async (adjId, targetMonth) => {
+    setSaving(`apply-${adjId}`);
+    try {
+      await updateAdjustmentStatus(adjId, 'applied', targetMonth);
+      toast.success('Credit applied to next month');
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to apply credit');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleReturnCredit = async (adjId) => {
+    setSaving(`return-${adjId}`);
+    try {
+      await updateAdjustmentStatus(adjId, 'returned');
+      toast.success('Credit returned');
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to return credit');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleDeleteAdjustment = async (adjId) => {
+    setSaving(`del-${adjId}`);
+    try {
+      await deleteMonthAdjustment(adjId);
+      toast.success('Removed');
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to remove');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  // ─── Helpers ───
+
+  const getEffectiveBudget = (spaId, baseBudget) => {
+    const spaAdj = adjustments[spaId] || [];
+    const incoming = appliedCredits[spaId] || [];
+    let effective = baseBudget;
+    for (const a of spaAdj) {
+      if (a.type === 'add_budget' && a.status === 'active') effective += a.amount;
+      if (a.type === 'lower_budget' && a.status === 'active') effective -= a.amount;
+      if (a.type === 'credit_hold' && a.status === 'active') effective -= a.amount;
+    }
+    // Add credits applied from other months
+    for (const c of incoming) effective += c.amount;
+    return Math.max(0, effective);
+  };
+
+  const getNextMonth = () => format(addMonths(monthToDate(month), 1), 'yyyy-MM');
+
   const prevMonth = () => setMonth(format(subMonths(monthToDate(month), 1), 'yyyy-MM'));
   const nextMonth = () => setMonth(format(addMonths(monthToDate(month), 1), 'yyyy-MM'));
 
@@ -272,8 +374,8 @@ export default function PaymentTracking() {
   // Stats: count individual periods across all trackable spas
   let totalPaidPeriods = 0, totalOverduePeriods = 0, totalPendingPeriods = 0;
   for (const spa of trackableSpas) {
-    const budget = spa.monthly_budget || 0;
-    const { periods } = getPeriods(spa.payment_schedule, month, budget);
+    const effBudget = getEffectiveBudget(spa.id, spa.monthly_budget || 0);
+    const { periods } = getPeriods(spa.payment_schedule, month, effBudget);
     const spaPayments = payments[spa.id] || {};
     for (const pd of periods) {
       const p = spaPayments[pd.period] || {};
@@ -463,7 +565,7 @@ export default function PaymentTracking() {
                 <span className="text-[10px] text-gray-400">({creditCardSpas.length})</span>
               </div>
               {creditCardSpas.map(spa => {
-                const budget = spa.monthly_budget || 0;
+                const budget = getEffectiveBudget(spa.id, spa.monthly_budget || 0);
                 const [y, m] = month.split('-').map(Number);
                 const totalDays = getDaysInMonth(new Date(y, m - 1));
                 const dailyPace = totalDays > 0 ? budget / totalDays : 0;
@@ -539,13 +641,19 @@ export default function PaymentTracking() {
                 </div>
               )}
               {trackableSpas.map(spa => {
-                const budget = spa.monthly_budget || 0;
-                const { periods, count: periodCount } = getPeriods(spa.payment_schedule, month, budget);
+                const baseBudget = spa.monthly_budget || 0;
+                const effectiveBudget = getEffectiveBudget(spa.id, baseBudget);
+                const { periods, count: periodCount } = getPeriods(spa.payment_schedule, month, effectiveBudget);
                 const spaPayments = payments[spa.id] || {};
                 const balance = runningBalances[spa.id] || 0;
                 const spaNotes = notes[spa.id] || [];
+                const spaAdj = adjustments[spa.id] || [];
+                const spaAppliedCredits = appliedCredits[spa.id] || [];
+                const activeAdj = spaAdj.filter(a => a.status === 'active');
+                const activeHolds = activeAdj.filter(a => a.type === 'credit_hold');
+                const activeBudgetAdj = activeAdj.filter(a => a.type === 'add_budget' || a.type === 'lower_budget');
                 const isNotesExpanded = expandedNotes[spa.id];
-                const isSpaExpanded = expandedSpas[spa.id] === true; // default collapsed
+                const isSpaExpanded = expandedSpas[spa.id] === true;
                 const latestNote = spaNotes[0];
                 const daysSinceNote = latestNote ? Math.floor((Date.now() - new Date(latestNote.created_at).getTime()) / 86400000) : null;
                 const noteAuthor = latestNote ? (allUsers || []).find(u => u.id === latestNote.created_by)?.name : null;
@@ -603,43 +711,20 @@ export default function PaymentTracking() {
                           {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
                         </div>
 
-                        {/* Monthly total (multi-period) or editable Due (single period) */}
-                        {periodCount > 1 ? (
-                          <div className="text-center min-w-[80px]">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Monthly</p>
-                            <p className="text-sm font-bold text-gray-900 dark:text-white">{budget > 0 ? fmtUSD(budget) : '—'}</p>
-                          </div>
-                        ) : (
-                          <div className="text-center min-w-[80px]">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Due</p>
-                            {canEdit ? (
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                defaultValue={(() => {
-                                  const saved = spaPayments[1]?.amount_due;
-                                  return (saved && saved > 0) ? saved.toLocaleString('en-US', { minimumFractionDigits: 2 }) : budget > 0 ? budget.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '';
-                                })()}
-                                onBlur={(e) => {
-                                  const num = parseFloat(String(e.target.value).replace(/[^0-9.\-]/g, '')) || 0;
-                                  if (num >= 0) {
-                                    e.target.value = num > 0 ? num.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '';
-                                    handleAmountDue(spa.id, 1, num);
-                                  }
-                                }}
-                                placeholder={budget > 0 ? budget.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}
-                                className="input-field text-xs py-1 text-center w-24 mt-0.5"
-                              />
-                            ) : (
-                              <p className="text-sm font-bold text-gray-900 dark:text-white">
-                                {(() => {
-                                  const display = (spaPayments[1]?.amount_due && spaPayments[1].amount_due > 0) ? spaPayments[1].amount_due : budget;
-                                  return display > 0 ? fmtUSD(display) : '—';
-                                })()}
-                              </p>
-                            )}
-                          </div>
-                        )}
+                        {/* Budget (effective, with adjustment indicator) */}
+                        <div className="text-center min-w-[100px]">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">
+                            {periodCount > 1 ? 'Monthly' : 'Due'}
+                          </p>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">
+                            {effectiveBudget > 0 ? fmtUSD(effectiveBudget) : '—'}
+                          </p>
+                          {effectiveBudget !== baseBudget && baseBudget > 0 && (
+                            <p className={`text-[9px] ${effectiveBudget > baseBudget ? 'text-green-600' : 'text-red-500'}`}>
+                              base {fmtUSD(baseBudget)} {effectiveBudget > baseBudget ? `+${fmtUSD(effectiveBudget - baseBudget)}` : fmtUSD(effectiveBudget - baseBudget)}
+                            </p>
+                          )}
+                        </div>
 
                         {/* Running balance */}
                         <div className="text-center min-w-[90px]">
@@ -774,6 +859,76 @@ export default function PaymentTracking() {
                         </div>
                       )}
 
+                      {/* Budget action buttons */}
+                      {canEdit && (
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'add_budget' }); setAdjAmount(''); setAdjNote(''); }}
+                              className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 transition-colors">
+                              <PlusCircle className="w-3 h-3" /> Add Budget
+                            </button>
+                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'lower_budget' }); setAdjAmount(''); setAdjNote(''); }}
+                              className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors">
+                              <MinusCircle className="w-3 h-3" /> Lower Budget
+                            </button>
+                            <button onClick={() => { setAdjModal({ spaId: spa.id, type: 'credit_hold' }); setAdjAmount(''); setAdjNote(''); }}
+                              className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1.5 rounded-lg bg-yellow-50 text-yellow-700 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:text-yellow-400 dark:hover:bg-yellow-900/30 transition-colors">
+                              <Wallet className="w-3 h-3" /> Save as Credit
+                            </button>
+                          </div>
+
+                          {/* Active adjustments tags */}
+                          {activeBudgetAdj.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {activeBudgetAdj.map(a => (
+                                <span key={a.id} className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${
+                                  a.type === 'add_budget' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                }`}>
+                                  {a.type === 'add_budget' ? '+' : '-'}{fmtUSD(a.amount)}
+                                  {a.note && <span className="text-[9px] opacity-70">({a.note})</span>}
+                                  <button onClick={() => handleDeleteAdjustment(a.id)} className="ml-0.5 hover:opacity-70"><Trash2 className="w-2.5 h-2.5" /></button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Credit holds */}
+                          {activeHolds.length > 0 && (
+                            <div className="mt-2 space-y-1.5">
+                              {activeHolds.map(h => (
+                                <div key={h.id} className="flex items-center gap-2 text-xs bg-yellow-50 dark:bg-yellow-900/10 rounded-lg px-3 py-2">
+                                  <Wallet className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+                                  <span className="font-semibold text-yellow-700 dark:text-yellow-400">{fmtUSD(h.amount)} held</span>
+                                  {h.note && <span className="text-[10px] text-yellow-600 dark:text-yellow-500">— {h.note}</span>}
+                                  <div className="flex items-center gap-1 ml-auto">
+                                    <button onClick={() => handleApplyCredit(h.id, getNextMonth())} disabled={saving === `apply-${h.id}`}
+                                      className="flex items-center gap-0.5 text-[10px] font-medium px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 transition-colors">
+                                      <ArrowRight className="w-3 h-3" /> Apply Next Month
+                                    </button>
+                                    <button onClick={() => handleReturnCredit(h.id)} disabled={saving === `return-${h.id}`}
+                                      className="flex items-center gap-0.5 text-[10px] font-medium px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 transition-colors">
+                                      <Undo2 className="w-3 h-3" /> Return
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Applied credits from other months */}
+                          {spaAppliedCredits.length > 0 && (
+                            <div className="mt-2">
+                              {spaAppliedCredits.map(c => (
+                                <div key={c.id} className="flex items-center gap-2 text-[10px] text-blue-600 dark:text-blue-400">
+                                  <ArrowRight className="w-3 h-3" />
+                                  <span>+{fmtUSD(c.amount)} credit from {format(monthToDate(c.month), 'MMM yyyy')}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Multi-period rows */}
                       {periodCount > 1 && isSpaExpanded && (
                         <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -844,6 +999,62 @@ export default function PaymentTracking() {
               })}
             </>
           )}
+        </div>
+      )}
+      {/* Adjustment Modal */}
+      {adjModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setAdjModal(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-sm w-full p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+              {adjModal.type === 'add_budget' && <><PlusCircle className="w-4 h-4 text-green-600" /> Add Budget</>}
+              {adjModal.type === 'lower_budget' && <><MinusCircle className="w-4 h-4 text-red-600" /> Lower Budget</>}
+              {adjModal.type === 'credit_hold' && <><Wallet className="w-4 h-4 text-yellow-600" /> Save as Credit</>}
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              {adjModal.type === 'add_budget' && 'Add extra budget for this month. Daily pace will be recalculated.'}
+              {adjModal.type === 'lower_budget' && 'Reduce budget for this month. Daily pace will be recalculated.'}
+              {adjModal.type === 'credit_hold' && 'Hold this amount from the budget for a future month. Client can request it back anytime.'}
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] text-gray-400 uppercase tracking-wide mb-1">Amount ($)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={adjAmount}
+                  onChange={(e) => setAdjAmount(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateAdjustment(); }}
+                  placeholder="0.00"
+                  className="input-field text-sm py-2 w-full"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 uppercase tracking-wide mb-1">Note (optional)</label>
+                <input
+                  type="text"
+                  value={adjNote}
+                  onChange={(e) => setAdjNote(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateAdjustment(); }}
+                  placeholder="Reason..."
+                  className="input-field text-xs py-1.5 w-full"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setAdjModal(null)} className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleCreateAdjustment} disabled={saving === 'adj' || !adjAmount}
+                className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg text-white transition-colors disabled:opacity-50 ${
+                  adjModal.type === 'add_budget' ? 'bg-green-600 hover:bg-green-700' :
+                  adjModal.type === 'lower_budget' ? 'bg-red-600 hover:bg-red-700' :
+                  'bg-yellow-600 hover:bg-yellow-700'
+                }`}>
+                {saving === 'adj' ? 'Saving...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

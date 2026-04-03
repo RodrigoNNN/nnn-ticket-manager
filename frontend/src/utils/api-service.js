@@ -581,6 +581,78 @@ export async function addPaymentNote(spaId, month, note, userId) {
   return data?.[0];
 }
 
+// ─── Month Adjustments (budget +/-, credit holds) ───
+
+export async function fetchMonthAdjustments(spaId, month) {
+  const { data, error } = await supabase
+    .from('spa_month_adjustments')
+    .select('*')
+    .eq('spa_id', spaId)
+    .eq('month', month)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchAllMonthAdjustments(month) {
+  const { data, error } = await supabase
+    .from('spa_month_adjustments')
+    .select('*')
+    .eq('month', month)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchAppliedCreditsForMonth(month) {
+  // Credits from OTHER months that were applied TO this month
+  const { data, error } = await supabase
+    .from('spa_month_adjustments')
+    .select('*')
+    .eq('type', 'credit_hold')
+    .eq('status', 'applied')
+    .eq('applied_to_month', month);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createMonthAdjustment(spaId, month, type, amount, note, userId) {
+  const { data, error } = await supabase
+    .from('spa_month_adjustments')
+    .insert({
+      spa_id: spaId,
+      month,
+      type,
+      amount: Math.abs(amount),
+      note: note || null,
+      status: 'active',
+      created_by: userId,
+    })
+    .select();
+  if (error) throw error;
+  return data?.[0];
+}
+
+export async function updateAdjustmentStatus(adjustmentId, status, appliedToMonth) {
+  const fields = { status };
+  if (appliedToMonth) fields.applied_to_month = appliedToMonth;
+  const { data, error } = await supabase
+    .from('spa_month_adjustments')
+    .update(fields)
+    .eq('id', adjustmentId)
+    .select();
+  if (error) throw error;
+  return data?.[0];
+}
+
+export async function deleteMonthAdjustment(adjustmentId) {
+  const { error } = await supabase
+    .from('spa_month_adjustments')
+    .delete()
+    .eq('id', adjustmentId);
+  if (error) throw error;
+}
+
 // ─── Promo Snapshots (for revert logic) ───
 
 async function createPromoSnapshot(ticketId, promo) {
