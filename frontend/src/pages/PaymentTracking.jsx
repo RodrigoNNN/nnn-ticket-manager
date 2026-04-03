@@ -83,10 +83,16 @@ export default function PaymentTracking() {
   const [noteInputs, setNoteInputs] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
+  const [savedIndicator, setSavedIndicator] = useState(null); // shows "Saved ✓" briefly
   const [editingSettings, setEditingSettings] = useState(null); // spaId being edited
 
   const effectiveAdmin = isAdmin && !isViewingAsOther;
   const canEdit = effectiveAdmin || user?.department === 'Accounting';
+
+  const flashSaved = (key) => {
+    setSavedIndicator(key);
+    setTimeout(() => setSavedIndicator(prev => prev === key ? null : prev), 2000);
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -146,13 +152,14 @@ export default function PaymentTracking() {
   // ─── Handlers ───
 
   const handleStatusChange = async (spaId, period, newStatus) => {
-    setSaving(`status-${spaId}-${period}`);
+    const key = `status-${spaId}-${period}`;
+    setSaving(key);
     try {
       const fields = { status: newStatus };
       if (newStatus === 'paid') fields.paid_at = new Date().toISOString();
       else fields.paid_at = null;
       await upsertPaymentTracking(spaId, month, fields, user.id, period);
-      toast.success(`Marked as ${newStatus}`);
+      flashSaved(`card-${spaId}`);
       await loadData();
     } catch (err) {
       toast.error('Failed to update status');
@@ -162,10 +169,11 @@ export default function PaymentTracking() {
   };
 
   const handleDeadlineChange = async (spaId, period, deadline) => {
-    setSaving(`deadline-${spaId}-${period}`);
+    const key = `deadline-${spaId}-${period}`;
+    setSaving(key);
     try {
       await upsertPaymentTracking(spaId, month, { deadline }, user.id, period);
-      toast.success('Deadline updated');
+      flashSaved(`card-${spaId}`);
       await loadData();
     } catch (err) {
       toast.error('Failed to update deadline');
@@ -177,10 +185,11 @@ export default function PaymentTracking() {
   const handleAmountPaid = async (spaId, period, value) => {
     const num = parseFloat(String(value).replace(/[^0-9.\-]/g, '')) || 0;
     if (num <= 0) return;
-    setSaving(`amount-${spaId}-${period}`);
+    const key = `amount-${spaId}-${period}`;
+    setSaving(key);
     try {
       await upsertPaymentTracking(spaId, month, { amount_paid: num }, user.id, period);
-      toast.success('Amount saved');
+      flashSaved(`card-${spaId}`);
       await loadData();
     } catch (err) {
       toast.error('Failed to save amount');
@@ -192,10 +201,11 @@ export default function PaymentTracking() {
   const handleAmountDue = async (spaId, period, value) => {
     const num = parseFloat(String(value).replace(/[^0-9.\-]/g, '')) || 0;
     if (num < 0) return;
-    setSaving(`due-${spaId}-${period}`);
+    const key = `due-${spaId}-${period}`;
+    setSaving(key);
     try {
       await upsertPaymentTracking(spaId, month, { amount_due: num }, user.id, period);
-      toast.success('Amount due updated');
+      flashSaved(`card-${spaId}`);
       await loadData();
     } catch (err) {
       toast.error('Failed to update amount due');
@@ -535,7 +545,7 @@ export default function PaymentTracking() {
                 const balance = runningBalances[spa.id] || 0;
                 const spaNotes = notes[spa.id] || [];
                 const isNotesExpanded = expandedNotes[spa.id];
-                const isSpaExpanded = expandedSpas[spa.id] !== false; // default open
+                const isSpaExpanded = expandedSpas[spa.id] === true; // default collapsed
                 const latestNote = spaNotes[0];
                 const daysSinceNote = latestNote ? Math.floor((Date.now() - new Date(latestNote.created_at).getTime()) / 86400000) : null;
                 const noteAuthor = latestNote ? (allUsers || []).find(u => u.id === latestNote.created_by)?.name : null;
@@ -583,6 +593,11 @@ export default function PaymentTracking() {
                               <button onClick={() => setEditingSettings(isSettingsOpen ? null : spa.id)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                                 <Settings2 className="w-3.5 h-3.5" />
                               </button>
+                            )}
+                            {savedIndicator === `card-${spa.id}` && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 flex items-center gap-1 animate-pulse">
+                                <CheckCircle className="w-3 h-3" /> Saved
+                              </span>
                             )}
                           </div>
                           {spa.location && <p className="text-[11px] text-gray-400">{spa.location}</p>}
@@ -713,8 +728,12 @@ export default function PaymentTracking() {
 
                         {/* Multi-period: toggle to expand */}
                         {periodCount > 1 && (
-                          <button onClick={() => toggleSpa(spa.id)} className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors mt-1">
-                            {periodCount} payments
+                          <button onClick={() => toggleSpa(spa.id)} className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg transition-colors mt-1 ${
+                            isSpaExpanded
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}>
+                            {isSpaExpanded ? 'Collapse' : `${periodCount} payments`}
                             {isSpaExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                           </button>
                         )}
